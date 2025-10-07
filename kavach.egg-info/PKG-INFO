@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: kavach
+Version: 0.1.0
+Requires-Dist: click
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: distro
+Requires-Dist: cryptography
+Requires-Dist: textual
+Dynamic: requires-dist

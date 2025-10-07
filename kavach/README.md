@@ -1,0 +1,17 @@
+# Kavach - System Hardening Tool
+
+This repository bundles a reference rule pack derived from *Annexure A* (Windows) and *Annexure B* (Linux) of the NTRO SIH-25237 specification. The rules are stored in `examples/annexure_rules.json` and are loaded by the API, CLI, and TUI by default.
+
+## Annexure rule coverage
+
+Each rule in the JSON file maps directly to one of the annexure control clusters (for example, Windows password policy, Windows firewall baselines, Linux filesystem hardening, and so on). The current actions are intentionally non-destructive placeholders that emit manual guidance so that the hardening flow can surface the control requirements without running potentially disruptive remediations.
+
+You can extend the placeholders by replacing the `check`, `remediate`, and `validate` command strings with implementation-specific automation (PowerShell, shell, or Python callables). The [`Rule`](backend/app/models/rules.py) model documents the shape that every control must follow.
+
+## Getting started
+
+* **CLI:** `python -m kavach.cli.kavach_cli apply --level strict` (defaults to the annexure rule pack).
+* **API:** run `uvicorn kavach.backend.app.main:app` and fetch `/rules` to inspect the loaded data set.
+* **TUI:** `python -m kavach.tui.app` brings up a textual interface backed by the same rule pack.
+
+> ⚠️ The distributed commands emit “Manual verification required …” messages. They are meant to document the mandated configuration until concrete automation is implemented for your organisation’s environment.

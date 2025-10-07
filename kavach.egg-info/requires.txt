@@ -1,0 +1,6 @@
+click
+fastapi
+uvicorn[standard]
+distro
+cryptography
+textual

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kavach Web UI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <section id="login-container" class="auth-view">
+            <div class="auth-hero">
+                <div class="brand-mark">Kavach</div>
+                <h1>Secure Configuration Control</h1>
+                <p class="subtitle">
+                    Provide the one-time token displayed in the Kavach TUI to unlock the hardened operations console.
+                </p>
+            </div>
+            <div class="auth-card">
+                <h2>Authenticate</h2>
+                <p class="helper-text">Tokens expire after a short window. Generate a fresh token from the TUI if needed.</p>
+                <label for="token-input">Access Token</label>
+                <input type="text" id="token-input" placeholder="Paste token here" autocomplete="off" spellcheck="false">
+                <button id="login-button" class="primary">Sign in</button>
+                <p id="login-error" class="error-message" role="alert"></p>
+            </div>
+        </section>
+
+        <div id="dashboard-container" class="dashboard hidden">
+            <aside class="sidebar" id="nav-sidebar">
+                <div class="sidebar-header">
+                    <div class="brand-mark brand-mark--compact">Kavach</div>
+                    <p class="sidebar-caption">System Hardening Center</p>
+                </div>
+                <nav class="sidebar-nav">
+                    <button class="nav-link active" data-section="overview">Overview</button>
+                    <button class="nav-link" data-section="rules">Rules</button>
+                    <button class="nav-link" data-section="reports">Reports</button>
+                    <button class="nav-link" data-section="checkpoints">Checkpoints</button>
+                </nav>
+                <div class="sidebar-footer">
+                    <button id="feedback-button" class="ghost small">Send Feedback</button>
+                    <small>&copy; <span id="copyright-year"></span> Kavach</small>
+                </div>
+            </aside>
+
+            <div class="dashboard-main">
+                <header class="topbar">
+                    <div class="topbar-meta">
+                        <h1>Kavach Operations Console</h1>
+                        <p class="topbar-subtitle">Monitor compliance, orchestrate hardening jobs, and manage rule packs.</p>
+                    </div>
+                    <div class="topbar-actions">
+                        <div class="token-chip" id="token-chip" title="Active session token"></div>
+                        <button id="logout-button" class="ghost">Sign out</button>
+                    </div>
+                </header>
+
+                <main class="content-area">
+                    <section class="summary-grid" data-section="overview">
+                        <article class="card metric">
+                            <div class="metric-label">Compliance posture</div>
+                            <div class="metric-value" id="compliance-score">--%</div>
+                            <div class="metric-trend" id="compliance-trend">Awaiting first run</div>
+                        </article>
+                        <article class="card metric">
+                            <div class="metric-label">Active rulesets</div>
+                            <div class="metric-value" id="ruleset-count">--</div>
+                            <div class="metric-trend" id="ruleset-detail">Loading…</div>
+                        </article>
+                        <article class="card metric">
+                            <div class="metric-label">Last hardened</div>
+                            <div class="metric-value" id="last-hardened">--</div>
+                            <div class="metric-trend" id="last-hardened-detail">Start a job to populate</div>
+                        </article>
+                        <article class="card metric">
+                            <div class="metric-label">Outstanding actions</div>
+                            <div class="metric-value" id="open-actions">0</div>
+                            <div class="metric-trend" id="open-actions-detail">All systems normal</div>
+                        </article>
+                    </section>
+
+                    <section class="panel" id="system-overview" data-section="overview">
+                        <div class="panel-header">
+                            <h2>System overview</h2>
+                            <button id="refresh-status" class="ghost small">Refresh</button>
+                        </div>
+                        <div class="system-grid" id="system-info">
+                            <div class="placeholder">Fetching host details…</div>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="rule-summary" data-section="rules" hidden>
+                        <div class="panel-header">
+                            <h2>Rule inventory</h2>
+                            <div class="panel-actions">
+                                <button id="start-hardening" class="primary">Launch hardening</button>
+                                <button id="edit-rules" class="ghost">Edit rules</button>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Rule ID</th>
+                                        <th>Title</th>
+                                        <th>Level</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rule-table-body">
+                                    <tr>
+                                        <td colspan="4" class="placeholder">Rules will appear after loading a pack.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="report-summary" data-section="reports" hidden>
+                        <div class="panel-header">
+                            <h2>Reports</h2>
+                            <div class="panel-actions">
+                                <button id="view-reports" class="ghost">View all</button>
+                                <button id="generate-report" class="primary">Generate PDF</button>
+                            </div>
+                        </div>
+                        <div id="reports-list" class="list-placeholder">
+                            <div class="placeholder">No reports generated yet.</div>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="checkpoint-summary" data-section="checkpoints" hidden>
+                        <div class="panel-header">
+                            <h2>Checkpoints</h2>
+                            <div class="panel-actions">
+                                <button id="rollback" class="ghost">Rollback latest</button>
+                            </div>
+                        </div>
+                        <div id="checkpoint-list" class="list-placeholder">
+                            <div class="placeholder">No checkpoints detected.</div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+
+        <div class="modal hidden" id="rules-modal" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
+            <div class="modal-content">
+                <header class="modal-header">
+                    <h2 id="rules-modal-title">Edit rules JSON</h2>
+                    <button class="icon-button" data-close-modal>&times;</button>
+                </header>
+                <div class="modal-body">
+                    <textarea id="rules-json" spellcheck="false"></textarea>
+                    <div class="modal-actions">
+                        <input type="file" id="import-file" class="hidden" accept="application/json">
+                        <button id="import-rules" class="ghost">Import JSON</button>
+                        <button id="save-rules" class="primary">Save changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal hidden" id="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
+            <div class="modal-content">
+                <header class="modal-header">
+                    <h2 id="feedback-modal-title">We value your feedback</h2>
+                    <button class="icon-button" data-close-modal>&times;</button>
+                </header>
+                <div class="modal-body">
+                    <p>Let us know how Kavach can improve your hardening workflows.</p>
+                    <textarea id="feedback-text" rows="5" placeholder="Share your thoughts…"></textarea>
+                    <div class="modal-actions">
+                        <button id="submit-feedback" class="primary">Submit</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
