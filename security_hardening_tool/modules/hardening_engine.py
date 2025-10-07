@@ -1,5 +1,5 @@
 
-import yaml
+import json
 import subprocess
 import os
 from datetime import datetime
@@ -7,11 +7,11 @@ from .rollback import store_previous_state
 
 def load_rules(os_name):
     """
-    Loads hardening rules from the YAML file for the specified OS.
+    Loads hardening rules from the JSON file for the specified OS.
     """
-    rules_path = os.path.join("config", "rules.yaml")
+    rules_path = os.path.join("config", "rules.json")
     with open(rules_path, "r") as f:
-        all_rules = yaml.safe_load(f)
+        all_rules = json.load(f)
     return all_rules.get(os_name, [])
 
 def apply_hardening(os_name, level):
