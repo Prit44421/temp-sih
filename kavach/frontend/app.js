@@ -23,6 +23,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const importFileInput = document.getElementById('import-file');
     const submitFeedbackButton = document.getElementById('submit-feedback');
 
+    // Hardening section buttons
+    const levelButtons = document.querySelectorAll('.level-button');
+    const startHardeningJobButton = document.getElementById('start-hardening-job');
+    const dryRunHardeningButton = document.getElementById('dry-run-hardening');
+    const previewChangesButton = document.getElementById('preview-changes');
+    
+    // Rollback section buttons
+    const rollbackLatestButton = document.getElementById('rollback-latest');
+    const rollbackSelectedButton = document.getElementById('rollback-selected');
+    const previewRollbackButton = document.getElementById('preview-rollback');
+
     const sections = document.querySelectorAll('[data-section]');
     const rulesTableBody = document.getElementById('rule-table-body');
     const reportsList = document.getElementById('reports-list');
@@ -120,6 +131,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Hardening section button handlers
+    levelButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            levelButtons.forEach(btn => btn.classList.remove('selected'));
+            button.classList.add('selected');
+            const level = button.getAttribute('data-level');
+            displayToast(`Selected ${level} hardening level`);
+        });
+    });
+
+    startHardeningJobButton?.addEventListener('click', () => {
+        const selectedLevel = document.querySelector('.level-button.selected');
+        const level = selectedLevel?.getAttribute('data-level') || 'moderate';
+        document.getElementById('hardening-status').innerHTML = `Starting ${level} hardening job...`;
+        displayToast(`Launching ${level} hardening job. Check CLI for detailed progress.`);
+    });
+
+    dryRunHardeningButton?.addEventListener('click', () => {
+        const selectedLevel = document.querySelector('.level-button.selected');
+        const level = selectedLevel?.getAttribute('data-level') || 'moderate';
+        document.getElementById('hardening-status').innerHTML = `Running ${level} hardening dry-run...`;
+        displayToast(`Starting ${level} dry-run. No changes will be applied.`);
+    });
+
+    previewChangesButton?.addEventListener('click', () => {
+        displayToast('Change preview will show affected rules and system modifications.');
+    });
+
+    // Rollback section button handlers  
+    rollbackLatestButton?.addEventListener('click', () => {
+        document.getElementById('rollback-status').innerHTML = 'Initiating rollback to latest checkpoint...';
+        displayToast('Rolling back to the most recent checkpoint.');
+    });
+
+    rollbackSelectedButton?.addEventListener('click', () => {
+        displayToast('Please select a checkpoint first.');
+    });
+
+    previewRollbackButton?.addEventListener('click', () => {
+        displayToast('Rollback preview will show what changes will be reverted.');
+    });
+
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
         btn.addEventListener('click', () => closeAllModals());
     });
@@ -202,9 +255,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return response.json();
             })
-            .then((checkpoints) => renderCheckpointList(checkpoints))
+            .then((checkpoints) => {
+                renderCheckpointList(checkpoints);
+                renderRollbackCheckpointList(checkpoints);
+            })
             .catch(() => {
                 checkpointList.innerHTML = '<div class="placeholder">Unable to load checkpoints.</div>';
+                const rollbackCheckpointList = document.getElementById('rollback-checkpoint-list');
+                if (rollbackCheckpointList) {
+                    rollbackCheckpointList.innerHTML = '<div class="placeholder">Unable to load checkpoints.</div>';
+                }
             });
     }
 
@@ -217,10 +277,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateSummaryPlaceholders() {
-        document.getElementById('compliance-score').textContent = '—%';
-        document.getElementById('compliance-trend').textContent = 'Pending initial assessment';
+        document.getElementById('compliance-score').textContent = '0%';
+        document.getElementById('compliance-trend').textContent = 'Loading compliance data...';
         document.getElementById('ruleset-count').textContent = '--';
-        document.getElementById('ruleset-detail').textContent = 'Awaiting rule pack';
+        document.getElementById('ruleset-detail').textContent = 'Loading rule packs...';
         document.getElementById('last-hardened').textContent = '--';
         document.getElementById('last-hardened-detail').textContent = 'No jobs recorded';
         document.getElementById('open-actions').textContent = '0';
@@ -232,6 +292,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalRules = rulesets.reduce((count, set) => count + (set.rules?.length || 0), 0);
         document.getElementById('ruleset-count').textContent = rulesets.length.toString();
         document.getElementById('ruleset-detail').textContent = `${totalRules} rules across ${rulesets.length} modules`;
+        
+        // Calculate compliance - for now, assume 0% since no rules have been applied yet
+        // In real implementation, this would check rule status from backend
+        const appliedRules = 0; // TODO: Get from actual rule status API
+        const compliancePercent = totalRules > 0 ? Math.round((appliedRules / totalRules) * 100) : 0;
+        document.getElementById('compliance-score').textContent = `${compliancePercent}%`;
+        document.getElementById('compliance-trend').textContent = totalRules > 0 ? 
+            `${totalRules} rules loaded, ready for hardening` : 'No rules loaded';
     }
 
     function renderSystemInfo(info = {}) {
@@ -299,6 +367,32 @@ document.addEventListener('DOMContentLoaded', () => {
             .join('');
     }
 
+    function renderRollbackCheckpointList(checkpoints = []) {
+        const rollbackCheckpointList = document.getElementById('rollback-checkpoint-list');
+        if (!rollbackCheckpointList) return;
+
+        if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
+            rollbackCheckpointList.innerHTML = '<div class="placeholder">No checkpoints available for rollback.</div>';
+            return;
+        }
+
+        rollbackCheckpointList.innerHTML = checkpoints
+            .map((checkpoint, index) => `
+                <div class="card checkpoint-item" style="margin-bottom: 12px; cursor: pointer; border: 2px solid var(--border);" 
+                     data-checkpoint-id="${checkpoint.id}" onclick="selectCheckpoint(this, '${checkpoint.id}')">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="metric-label">${index === 0 ? 'Latest Checkpoint' : 'Checkpoint'}</div>
+                            <div class="metric-value" style="font-size: 1.1rem;">${checkpoint.id}</div>
+                            <div class="metric-trend">${checkpoint.timestamp || 'Timestamp pending'}</div>
+                        </div>
+                        <div class="status-chip ${index === 0 ? 'status-chip--success' : ''}">${index === 0 ? 'Latest' : 'Available'}</div>
+                    </div>
+                </div>
+            `)
+            .join('');
+    }
+
     function openModal(id) {
         const modal = document.getElementById(id);
         if (modal) {
@@ -320,6 +414,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const sectionId = section.getAttribute('data-section');
             if (sectionId === activeSection) {
                 section.removeAttribute('hidden');
+                
+                // Initialize section-specific defaults
+                if (activeSection === 'hardening') {
+                    const moderateButton = document.querySelector('.level-button[data-level="moderate"]');
+                    if (moderateButton && !document.querySelector('.level-button.selected')) {
+                        moderateButton.classList.add('selected');
+                    }
+                }
             } else if (section.hasAttribute('hidden') === false) {
                 section.setAttribute('hidden', 'true');
             }
@@ -349,4 +451,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    // Global function for checkpoint selection
+    window.selectCheckpoint = function(element, checkpointId) {
+        document.querySelectorAll('.checkpoint-item').forEach(item => {
+            item.style.borderColor = 'var(--border)';
+            item.style.backgroundColor = 'var(--surface)';
+        });
+        
+        element.style.borderColor = 'var(--primary)';
+        element.style.backgroundColor = 'var(--primary-soft)';
+        
+        const rollbackSelectedButton = document.getElementById('rollback-selected');
+        if (rollbackSelectedButton) {
+            rollbackSelectedButton.disabled = false;
+            rollbackSelectedButton.onclick = () => {
+                document.getElementById('rollback-status').innerHTML = `Initiating rollback to checkpoint ${checkpointId}...`;
+                displayToast(`Rolling back to checkpoint: ${checkpointId}`);
+            };
+        }
+    };
 });

@@ -35,8 +35,10 @@
                 <nav class="sidebar-nav">
                     <button class="nav-link active" data-section="overview">Overview</button>
                     <button class="nav-link" data-section="rules">Rules</button>
+                    <button class="nav-link" data-section="hardening">Hardening</button>
                     <button class="nav-link" data-section="reports">Reports</button>
                     <button class="nav-link" data-section="checkpoints">Checkpoints</button>
+                    <button class="nav-link" data-section="rollback">Rollback</button>
                 </nav>
                 <div class="sidebar-footer">
                     <button id="feedback-button" class="ghost small">Send Feedback</button>
@@ -87,6 +89,60 @@
                         </div>
                         <div class="system-grid" id="system-info">
                             <div class="placeholder">Fetching host details…</div>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="hardening-control" data-section="hardening" hidden>
+                        <div class="panel-header">
+                            <h2>System Hardening</h2>
+                        </div>
+                        <div class="hardening-options">
+                            <div class="card" style="margin-bottom: 20px;">
+                                <h3>Hardening Level</h3>
+                                <p>Select the level of security hardening to apply to your system.</p>
+                                <div class="level-selector" style="display: flex; gap: 12px; margin-top: 16px;">
+                                    <button id="apply-basic" class="level-button" data-level="basic">Basic</button>
+                                    <button id="apply-moderate" class="level-button primary" data-level="moderate">Moderate</button>
+                                    <button id="apply-strict" class="level-button" data-level="strict">Strict</button>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <h3>Hardening Options</h3>
+                                <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                                    <button id="start-hardening-job" class="primary">Launch Hardening</button>
+                                    <button id="dry-run-hardening" class="ghost">Dry Run</button>
+                                    <button id="preview-changes" class="ghost">Preview Changes</button>
+                                </div>
+                                <div id="hardening-status" class="placeholder" style="margin-top: 20px; padding: 16px; border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: 8px;">
+                                    Ready to start hardening. Select a level and click Launch Hardening.
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel" id="rollback-control" data-section="rollback" hidden>
+                        <div class="panel-header">
+                            <h2>System Rollback</h2>
+                        </div>
+                        <div class="rollback-options">
+                            <div class="card" style="margin-bottom: 20px;">
+                                <h3>Available Checkpoints</h3>
+                                <p>Select a checkpoint to rollback your system to a previous state.</p>
+                                <div id="rollback-checkpoint-list" class="list-placeholder">
+                                    <div class="placeholder">Loading checkpoints...</div>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <h3>Rollback Actions</h3>
+                                <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                                    <button id="rollback-latest" class="primary">Rollback Latest</button>
+                                    <button id="rollback-selected" class="ghost" disabled>Rollback Selected</button>
+                                    <button id="preview-rollback" class="ghost">Preview Rollback</button>
+                                </div>
+                                <div id="rollback-status" class="placeholder" style="margin-top: 20px; padding: 16px; border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: 8px;">
+                                    No rollback operations in progress.
+                                </div>
+                            </div>
                         </div>
                     </section>
 

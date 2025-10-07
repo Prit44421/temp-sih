@@ -211,6 +211,8 @@ button.icon-button:hover {
     gap: 32px;
     position: relative;
     box-shadow: inset -1px 0 0 rgba(148, 163, 184, 0.12);
+    min-height: 100vh;
+    overflow-y: auto;
 }
 
 .brand-mark--compact {
@@ -237,6 +239,10 @@ button.icon-button:hover {
     border-radius: var(--radius-sm);
     text-align: left;
     font-weight: 600;
+    display: block;
+    width: 100%;
+    border: 1px solid rgba(226, 232, 240, 0.1);
+    margin-bottom: 4px;
 }
 
 .nav-link.active,
@@ -421,6 +427,12 @@ tbody tr:hover {
     color: var(--warning);
 }
 
+.status-chip--success {
+    background: rgba(22, 163, 74, 0.14);
+    border-color: rgba(22, 163, 74, 0.28);
+    color: var(--success);
+}
+
 .list-placeholder {
     border: 1px dashed rgba(148, 163, 184, 0.4);
     border-radius: var(--radius-sm);
@@ -532,5 +544,63 @@ tbody tr:hover {
 
     .modal {
         padding: 16px;
+    }
+}
+
+/* Hardening and Rollback specific styles */
+.hardening-options,
+.rollback-options {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.level-selector {
+    display: flex;
+    gap: 12px;
+}
+
+.level-button {
+    background: var(--surface-muted);
+    color: var(--text);
+    border: 2px solid var(--border);
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.level-button:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+}
+
+.level-button.selected {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.card h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.card p {
+    margin: 0 0 16px 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+@media (max-width: 600px) {
+    .level-selector {
+        flex-direction: column;
+    }
+    
+    .hardening-options .card > div,
+    .rollback-options .card > div {
+        flex-direction: column;
     }
 }
