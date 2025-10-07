@@ -1,0 +1,30 @@
+
+windows:
+  - parameter: "PasswordHistorySize"
+    level: "basic"
+    value: 24
+    description: "Enforce password history: 24 passwords remembered"
+  - parameter: "MaximumPasswordAge"
+    level: "moderate"
+    value: 60
+    description: "Maximum password age: 60 days"
+  - parameter: "MinimumPasswordLength"
+    level: "strict"
+    value: 14
+    description: "Minimum password length: 14 characters"
+
+ubuntu:
+  - parameter: "PasswordQuality"
+    level: "basic"
+    value: "enforce"
+    description: "Enforce password quality"
+  - parameter: "SSHRootLogin"
+    level: "strict"
+    value: "no"
+    description: "Disable root SSH login"
+
+centos:
+  - parameter: "Firewall"
+    level: "basic"
+    value: "enabled"
+    description: "Ensure firewall is enabled"
