@@ -1,1 +1,0 @@
-Manual verification required: public firewall on; inbound block; outbound allow; notifications off; no local firewall or IPsec rules; log file C:\WINDOWS\System32\logfiles\firewall\publicfw.log; size ; log drops and successes

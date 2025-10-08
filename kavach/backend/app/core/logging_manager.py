@@ -166,8 +166,8 @@ class LoggingManager:
             prev_state=stdout.strip()[:200] if stdout else None,
             status=status,
             cmd=cmd,
-            stdout=stdout[:500] if stdout else None,  # Truncate long output
-            stderr=stderr[:500] if stderr else None,
+            stdout=stdout if stdout else None,
+            stderr=stderr if stderr else None,
             message=f"Rule check for {rule_id} completed with exit code {exit_code}"
         )
     

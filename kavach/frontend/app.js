@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let apiToken = '';
     let lastRulesPayload = '';
+    let cachedCheckpoints = [];
 
     copyrightYear.textContent = new Date().getFullYear().toString();
 
@@ -75,7 +76,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshStatusButton?.addEventListener('click', () => loadSystemStatus());
 
-    editRulesButton?.addEventListener('click', () => openModal('rules-modal'));
+    editRulesButton?.addEventListener('click', () => {
+        openModal('rules-modal');
+        const rulesTextarea = document.getElementById('rules-json');
+        if (!rulesTextarea) return;
+
+        rulesTextarea.value = 'Loading current rules...';
+        apiFetch('/api/rules')
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to load rules');
+                return response.json();
+            })
+            .then(rulesets => {
+                // Pretty-print the JSON
+                rulesTextarea.value = JSON.stringify(rulesets, null, 2);
+                lastRulesPayload = rulesTextarea.value;
+            })
+            .catch(err => {
+                console.error(err);
+                rulesTextarea.value = 'Error: Could not load rules. Please check the console.';
+                displayToast('Failed to load rules for editing.', 'error');
+            });
+    });
     feedbackButton?.addEventListener('click', () => openModal('feedback-modal'));
 
     startHardeningButton?.addEventListener('click', () => {
@@ -87,17 +109,89 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     viewReportsButton?.addEventListener('click', () => selectSection('reports'));
+    
     generateReportButton?.addEventListener('click', () => {
-        displayToast('Report generation is queued. Check the Reports tab for updates.');
+        const statusEl = document.getElementById('reports-status');
+        statusEl.innerHTML = 'Generating compliance report...';
+        displayToast('Generating PDF report. This may take a moment.', 'info');
+
+        apiFetch('/api/reports/generate', {
+            method: 'POST'
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.detail || 'Failed to generate report');
+                });
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            // Name the file
+            const date = new Date().toISOString().split('T')[0];
+            a.download = `Kavach-Compliance-Report-${date}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            statusEl.innerHTML = 'Report generated and download started.';
+            displayToast('Report downloaded successfully.', 'success');
+            hydrateReports(); // Refresh the list of reports (if applicable)
+        })
+        .catch(err => {
+            console.error('Report generation failed', err);
+            statusEl.innerHTML = `Failed to generate report: ${err.message}`;
+            displayToast(`Error: ${err.message}`, 'error');
+        });
     });
 
     saveRulesButton?.addEventListener('click', () => {
         const rulesTextarea = document.getElementById('rules-json');
         if (!rulesTextarea) return;
 
-        lastRulesPayload = rulesTextarea.value.trim();
-        displayToast('Rule pack updates captured locally. Submit via CLI/API to persist.');
-        closeAllModals();
+        const newRulesPayload = rulesTextarea.value.trim();
+        try {
+            // Validate JSON before sending
+            JSON.parse(newRulesPayload);
+        } catch (e) {
+            displayToast('Invalid JSON format. Please correct and try again.', 'error');
+            return;
+        }
+
+        if (newRulesPayload === lastRulesPayload) {
+            displayToast('No changes detected in the rules.', 'info');
+            closeAllModals();
+            return;
+        }
+
+        displayToast('Saving updated rules...', 'info');
+
+        apiFetch('/api/rules', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: newRulesPayload
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.detail || 'Failed to save rules');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            displayToast(data.message || 'Rules saved successfully.', 'success');
+            lastRulesPayload = newRulesPayload;
+            loadRules(); // Refresh the rules table
+            closeAllModals();
+        })
+        .catch(err => {
+            displayToast(`Error: ${err.message}`, 'error');
+        });
     });
 
     importRulesButton?.addEventListener('click', () => importFileInput?.click());
@@ -144,30 +238,75 @@ document.addEventListener('DOMContentLoaded', () => {
     startHardeningJobButton?.addEventListener('click', () => {
         const selectedLevel = document.querySelector('.level-button.selected');
         const level = selectedLevel?.getAttribute('data-level') || 'moderate';
-        document.getElementById('hardening-status').innerHTML = `Starting ${level} hardening job...`;
-        displayToast(`Launching ${level} hardening job. Check CLI for detailed progress.`);
+        const statusEl = document.getElementById('hardening-status');
+        statusEl.innerHTML = `Starting ${level} hardening job...`;
+        apiFetch('/api/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ level, dry_run: false })
+        })
+        .then(res => res.ok ? res.json() : Promise.reject(res))
+        .then(data => {
+            statusEl.innerHTML = data?.message || `Hardening job triggered (${level}).`;
+            displayToast(`Launched ${level} hardening job.`);
+            loadCheckpoints();
+        })
+        .catch(err => {
+            console.error('Apply failed', err);
+            statusEl.innerHTML = 'Failed to start hardening.';
+            displayToast('Failed to start hardening.', true);
+        });
     });
 
     dryRunHardeningButton?.addEventListener('click', () => {
         const selectedLevel = document.querySelector('.level-button.selected');
         const level = selectedLevel?.getAttribute('data-level') || 'moderate';
-        document.getElementById('hardening-status').innerHTML = `Running ${level} hardening dry-run...`;
-        displayToast(`Starting ${level} dry-run. No changes will be applied.`);
+        const statusEl = document.getElementById('hardening-status');
+        statusEl.innerHTML = `Running ${level} hardening dry-run...`;
+        apiFetch('/api/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ level, dry_run: true })
+        })
+        .then(res => res.ok ? res.json() : Promise.reject(res))
+        .then(data => {
+            statusEl.innerHTML = data?.message || `Dry-run completed for ${level}.`;
+            displayToast(`Dry-run started for ${level}.`);
+        })
+        .catch(err => {
+            console.error('Dry-run failed', err);
+            statusEl.innerHTML = 'Dry-run failed.';
+            displayToast('Dry-run failed.', true);
+        });
     });
 
     previewChangesButton?.addEventListener('click', () => {
         displayToast('Change preview will show affected rules and system modifications.');
     });
 
-    // Rollback section button handlers  
+    // Rollback section button handlers
     rollbackLatestButton?.addEventListener('click', () => {
-        document.getElementById('rollback-status').innerHTML = 'Initiating rollback to latest checkpoint...';
-        displayToast('Rolling back to the most recent checkpoint.');
+        const statusEl = document.getElementById('rollback-status');
+        statusEl.innerHTML = 'Initiating rollback to latest checkpoint...';
+        
+        apiFetch('/api/rollback/latest', { method: 'POST' })
+            .then(res => res.ok ? res.json() : Promise.reject(res))
+            .then(data => {
+                statusEl.innerHTML = data?.message || 'Rollback to latest checkpoint completed.';
+                displayToast('Rollback to latest checkpoint successful.');
+                loadCheckpoints(); // Refresh the list
+            })
+            .catch(err => {
+                console.error('Rollback failed', err);
+                statusEl.innerHTML = 'Rollback failed.';
+                displayToast('Rollback to latest checkpoint failed.', true);
+            });
     });
 
-    rollbackSelectedButton?.addEventListener('click', () => {
-        displayToast('Please select a checkpoint first.');
-    });
+    // This is handled by the global window.selectCheckpoint function now
+    // rollbackSelectedButton?.addEventListener('click', () => {
+    //     displayToast('Please select a checkpoint first.');
+    // });
 
     previewRollbackButton?.addEventListener('click', () => {
         displayToast('Rollback preview will show what changes will be reverted.');
@@ -186,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function authenticate(token) {
-        return fetch('/api/status', {
+        return apiFetch('/api/status', {
             headers: { 'X-Kavach-Token': token }
         }).then((response) => {
             if (!response.ok) {
@@ -213,9 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadSystemStatus() {
         if (!apiToken) return;
-        fetch('/api/status', {
-            headers: { 'X-Kavach-Token': apiToken }
-        })
+        apiFetch('/api/status')
             .then((response) => response.json())
             .then((data) => renderSystemInfo(data.system_info))
             .catch((err) => {
@@ -226,9 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadRules() {
         if (!apiToken) return;
-        fetch('/api/rules', {
-            headers: { 'X-Kavach-Token': apiToken }
-        })
+        apiFetch('/api/rules')
             .then((response) => {
                 if (!response.ok) {
                     throw new Error(`Status ${response.status}`);
@@ -246,9 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadCheckpoints() {
         if (!apiToken) return;
-        fetch('/api/checkpoints', {
-            headers: { 'X-Kavach-Token': apiToken }
-        })
+        apiFetch('/api/checkpoints')
             .then((response) => {
                 if (!response.ok) {
                     throw new Error('Failed to load checkpoints');
@@ -256,6 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return response.json();
             })
             .then((checkpoints) => {
+                cachedCheckpoints = Array.isArray(checkpoints) ? checkpoints : [];
                 renderCheckpointList(checkpoints);
                 renderRollbackCheckpointList(checkpoints);
             })
@@ -293,13 +427,20 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('ruleset-count').textContent = rulesets.length.toString();
         document.getElementById('ruleset-detail').textContent = `${totalRules} rules across ${rulesets.length} modules`;
         
-        // Calculate compliance - for now, assume 0% since no rules have been applied yet
-        // In real implementation, this would check rule status from backend
-        const appliedRules = 0; // TODO: Get from actual rule status API
-        const compliancePercent = totalRules > 0 ? Math.round((appliedRules / totalRules) * 100) : 0;
-        document.getElementById('compliance-score').textContent = `${compliancePercent}%`;
-        document.getElementById('compliance-trend').textContent = totalRules > 0 ? 
-            `${totalRules} rules loaded, ready for hardening` : 'No rules loaded';
+        // Calculate compliance by fetching rule statuses
+        apiFetch('/api/rules/status')
+            .then(response => response.json())
+            .then(statuses => {
+                const appliedRules = Object.values(statuses).filter(status => status).length;
+                const compliancePercent = totalRules > 0 ? Math.round((appliedRules / totalRules) * 100) : 0;
+                document.getElementById('compliance-score').textContent = `${compliancePercent}%`;
+                document.getElementById('compliance-trend').textContent = totalRules > 0 ? 
+                    `${appliedRules} of ${totalRules} rules compliant` : 'No rules loaded';
+            })
+            .catch(() => {
+                document.getElementById('compliance-score').textContent = 'Error';
+                document.getElementById('compliance-trend').textContent = 'Could not load compliance status';
+            });
     }
 
     function renderSystemInfo(info = {}) {
@@ -446,11 +587,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function displayToast(message, isError = false) {
+    function displayToast(message, type = 'info') { // type: 'info', 'success', 'error'
         if (!toast) return;
         toast.textContent = message;
-        toast.style.borderColor = isError ? 'rgba(220, 38, 38, 0.3)' : 'var(--border)';
+        
+        const colors = {
+            info: 'var(--border)',
+            success: 'rgba(34, 197, 94, 0.4)',
+            error: 'rgba(220, 38, 38, 0.4)'
+        };
+
+        toast.style.borderColor = colors[type] || colors.info;
         toast.classList.remove('hidden');
+        
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 3800);
@@ -484,8 +633,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rollbackSelectedButton) {
             rollbackSelectedButton.disabled = false;
             rollbackSelectedButton.onclick = () => {
-                document.getElementById('rollback-status').innerHTML = `Initiating rollback to checkpoint ${checkpointId}...`;
-                displayToast(`Rolling back to checkpoint: ${checkpointId}`);
+                const statusEl = document.getElementById('rollback-status');
+                statusEl.innerHTML = `Initiating rollback to checkpoint ${checkpointId}...`;
+                
+                apiFetch(`/api/rollback/${checkpointId}`, { method: 'POST' })
+                    .then(res => res.ok ? res.json() : Promise.reject(res))
+                    .then(data => {
+                        statusEl.innerHTML = data?.message || `Rollback to ${checkpointId} completed.`;
+                        displayToast(`Rollback to ${checkpointId} successful.`, 'success');
+                        loadCheckpoints(); // Refresh list
+                    })
+                    .catch(err => {
+                        console.error('Rollback failed', err);
+                        statusEl.innerHTML = 'Rollback failed.';
+                        displayToast(`Rollback to ${checkpointId} failed.`, 'error');
+                    });
             };
         }
     };

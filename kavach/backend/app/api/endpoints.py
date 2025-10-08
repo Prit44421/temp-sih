@@ -116,6 +116,16 @@ def get_rules() -> List[RuleSet]:
     return _rule_engine.ruleset
 
 
+@router.get("/rules/status", response_model=Dict[str, bool])
+def get_rule_statuses() -> Dict[str, bool]:
+    """Return the compliance status of each rule."""
+    statuses = {}
+    for ruleset in _rule_engine.ruleset:
+        for rule in ruleset.rules:
+            statuses[rule.id] = _rule_engine.check_rule_compliance(rule)
+    return statuses
+
+
 @router.put("/rules", response_model=List[RuleSet])
 def update_rules(rules: List[RuleSet]) -> List[RuleSet]:
     """Persist new rules and reload the engine."""

@@ -122,6 +122,16 @@ class RuleEngine:
         
         self.logging_manager.log_app_event("INFO", f"Completed rule application at level {level}")
 
+    def check_rule_compliance(self, rule: Rule) -> bool:
+        """Check if a single rule is compliant."""
+        check_result = self._execute_action(rule.check, phase="check")
+        if not check_result.succeeded:
+            return False
+
+        expected = (rule.check.expect or "").strip()
+        observed = check_result.stdout.strip()
+        return expected and observed == expected
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
