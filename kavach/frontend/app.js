@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const refreshStatusButton = document.getElementById('refresh-status');
     const editRulesButton = document.getElementById('edit-rules');
     const startHardeningButton = document.getElementById('start-hardening');
-    const rollbackButton = document.getElementById('rollback');
     const feedbackButton = document.getElementById('feedback-button');
     const viewReportsButton = document.getElementById('view-reports');
     const generateReportButton = document.getElementById('generate-report');
@@ -37,13 +36,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const sections = document.querySelectorAll('[data-section]');
     const rulesTableBody = document.getElementById('rule-table-body');
     const reportsList = document.getElementById('reports-list');
-    const checkpointList = document.getElementById('checkpoint-list');
 
     let apiToken = '';
     let lastRulesPayload = '';
     let cachedCheckpoints = [];
 
     copyrightYear.textContent = new Date().getFullYear().toString();
+
+    // Helper function to make authenticated API calls
+    function apiFetch(url, options = {}) {
+        const defaultHeaders = {
+            'X-Kavach-Token': apiToken
+        };
+        
+        const mergedOptions = {
+            ...options,
+            headers: {
+                ...defaultHeaders,
+                ...(options.headers || {})
+            }
+        };
+        
+        return fetch(url, mergedOptions);
+    }
 
     loginButton.addEventListener('click', () => {
         const token = tokenInput.value.trim();
@@ -102,10 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     startHardeningButton?.addEventListener('click', () => {
         displayToast('Hardening jobs can be launched from the CLI or upcoming backend workflows.');
-    });
-
-    rollbackButton?.addEventListener('click', () => {
-        displayToast('Rollback requires selecting a checkpoint. This action will be available soon.');
     });
 
     viewReportsButton?.addEventListener('click', () => selectSection('reports'));
@@ -228,7 +239,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hardening section button handlers
     levelButtons.forEach(button => {
         button.addEventListener('click', () => {
+            // Remove 'selected' class from all buttons
             levelButtons.forEach(btn => btn.classList.remove('selected'));
+            // Add 'selected' class only to the clicked button
             button.classList.add('selected');
             const level = button.getAttribute('data-level');
             displayToast(`Selected ${level} hardening level`);
@@ -390,11 +403,9 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then((checkpoints) => {
                 cachedCheckpoints = Array.isArray(checkpoints) ? checkpoints : [];
-                renderCheckpointList(checkpoints);
                 renderRollbackCheckpointList(checkpoints);
             })
             .catch(() => {
-                checkpointList.innerHTML = '<div class="placeholder">Unable to load checkpoints.</div>';
                 const rollbackCheckpointList = document.getElementById('rollback-checkpoint-list');
                 if (rollbackCheckpointList) {
                     rollbackCheckpointList.innerHTML = '<div class="placeholder">Unable to load checkpoints.</div>';
@@ -492,38 +503,47 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const rows = [];
-        rulesets.forEach((set) => {
-            (set.rules || []).forEach((rule) => {
-                rows.push(`
-                    <tr>
-                        <td>${rule.id}</td>
-                        <td>${rule.title}</td>
-                        <td>${rule.level}</td>
-                        <td><span class="status-chip status-chip--pending">Pending</span></td>
-                    </tr>
-                `);
+        // Fetch rule statuses and then render
+        apiFetch('/api/rules/status')
+            .then(response => response.json())
+            .then(statuses => {
+                const rows = [];
+                rulesets.forEach((set) => {
+                    (set.rules || []).forEach((rule) => {
+                        const isCompliant = statuses[rule.id] || false;
+                        const statusClass = isCompliant ? 'status-chip--success' : 'status-chip--pending';
+                        const statusText = isCompliant ? 'Compliant' : 'Pending';
+                        
+                        rows.push(`
+                            <tr>
+                                <td>${rule.id}</td>
+                                <td>${rule.title}</td>
+                                <td>${rule.level}</td>
+                                <td><span class="status-chip ${statusClass}">${statusText}</span></td>
+                            </tr>
+                        `);
+                    });
+                });
+                rulesTableBody.innerHTML = rows.join('');
+            })
+            .catch(err => {
+                console.error('Failed to fetch rule statuses', err);
+                // Fallback to showing pending status
+                const rows = [];
+                rulesets.forEach((set) => {
+                    (set.rules || []).forEach((rule) => {
+                        rows.push(`
+                            <tr>
+                                <td>${rule.id}</td>
+                                <td>${rule.title}</td>
+                                <td>${rule.level}</td>
+                                <td><span class="status-chip status-chip--pending">Unknown</span></td>
+                            </tr>
+                        `);
+                    });
+                });
+                rulesTableBody.innerHTML = rows.join('');
             });
-        });
-
-        rulesTableBody.innerHTML = rows.join('');
-    }
-
-    function renderCheckpointList(checkpoints = []) {
-        if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
-            checkpointList.innerHTML = '<div class="placeholder">No checkpoints available yet.</div>';
-            return;
-        }
-
-        checkpointList.innerHTML = checkpoints
-            .map((checkpoint) => `
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="metric-label">Checkpoint ID</div>
-                    <div class="metric-value" style="font-size:1.4rem">${checkpoint.id}</div>
-                    <div class="metric-trend">${checkpoint.timestamp || 'Timestamp pending'}</div>
-                </div>
-            `)
-            .join('');
     }
 
     function renderRollbackCheckpointList(checkpoints = []) {
@@ -531,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rollbackCheckpointList) return;
 
         if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
-            rollbackCheckpointList.innerHTML = '<div class="placeholder">No checkpoints available for rollback.</div>';
+            rollbackCheckpointList.innerHTML = '<div class="placeholder">No checkpoints available. Checkpoints are created automatically when hardening rules are applied.</div>';
             return;
         }
 
@@ -541,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
                      data-checkpoint-id="${checkpoint.id}" onclick="selectCheckpoint(this, '${checkpoint.id}')">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <div class="metric-label">${index === 0 ? 'Latest Checkpoint' : 'Checkpoint'}</div>
+                            <div class="metric-label">${index === 0 ? 'Latest Checkpoint' : `Checkpoint #${checkpoints.length - index}`}</div>
                             <div class="metric-value" style="font-size: 1.1rem;">${checkpoint.id}</div>
                             <div class="metric-trend">${checkpoint.timestamp || 'Timestamp pending'}</div>
                         </div>

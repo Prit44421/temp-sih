@@ -25,7 +25,7 @@ RULES_PATH = ROOT_DIR / "examples" / "annexure_rules.json"
 CSS_PATH = Path(__file__).with_name("app.css")
 
 
-def _generate_token(length: int = 32) -> str:
+def _generate_token(length: int = 5) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
 

@@ -37,8 +37,7 @@
                     <button class="nav-link" data-section="rules">Rules</button>
                     <button class="nav-link" data-section="hardening">Hardening</button>
                     <button class="nav-link" data-section="reports">Reports</button>
-                    <button class="nav-link" data-section="checkpoints">Checkpoints</button>
-                    <button class="nav-link" data-section="rollback">Rollback</button>
+                    <button class="nav-link" data-section="rollback">Checkpoints & Rollback</button>
                 </nav>
                 <div class="sidebar-footer">
                     <button id="feedback-button" class="ghost small">Send Feedback</button>
@@ -102,7 +101,7 @@
                                 <p>Select the level of security hardening to apply to your system.</p>
                                 <div class="level-selector" style="display: flex; gap: 12px; margin-top: 16px;">
                                     <button id="apply-basic" class="level-button" data-level="basic">Basic</button>
-                                    <button id="apply-moderate" class="level-button primary" data-level="moderate">Moderate</button>
+                                    <button id="apply-moderate" class="level-button" data-level="moderate">Moderate</button>
                                     <button id="apply-strict" class="level-button" data-level="strict">Strict</button>
                                 </div>
                             </div>
@@ -122,12 +121,12 @@
 
                     <section class="panel" id="rollback-control" data-section="rollback" hidden>
                         <div class="panel-header">
-                            <h2>System Rollback</h2>
+                            <h2>Checkpoints & Rollback</h2>
                         </div>
                         <div class="rollback-options">
                             <div class="card" style="margin-bottom: 20px;">
                                 <h3>Available Checkpoints</h3>
-                                <p>Select a checkpoint to rollback your system to a previous state.</p>
+                                <p>System checkpoints are created automatically when hardening rules are applied. Select a checkpoint to rollback your system to a previous state.</p>
                                 <div id="rollback-checkpoint-list" class="list-placeholder">
                                     <div class="placeholder">Loading checkpoints...</div>
                                 </div>
@@ -135,12 +134,12 @@
                             <div class="card">
                                 <h3>Rollback Actions</h3>
                                 <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
-                                    <button id="rollback-latest" class="primary">Rollback Latest</button>
-                                    <button id="rollback-selected" class="ghost" disabled>Rollback Selected</button>
+                                    <button id="rollback-latest" class="primary">Rollback to Latest</button>
+                                    <button id="rollback-selected" class="ghost" disabled>Rollback to Selected</button>
                                     <button id="preview-rollback" class="ghost">Preview Rollback</button>
                                 </div>
                                 <div id="rollback-status" class="placeholder" style="margin-top: 20px; padding: 16px; border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: 8px;">
-                                    No rollback operations in progress.
+                                    No rollback operations in progress. Select a checkpoint above or rollback to the latest checkpoint.
                                 </div>
                             </div>
                         </div>
@@ -185,18 +184,6 @@
                         </div>
                         <div id="reports-status" class="placeholder" style="margin-top: 20px; padding: 16px; border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: 8px;">
                             Click "Generate PDF" to create a new compliance report.
-                        </div>
-                    </section>
-
-                    <section class="panel" id="checkpoint-summary" data-section="checkpoints" hidden>
-                        <div class="panel-header">
-                            <h2>Checkpoints</h2>
-                            <div class="panel-actions">
-                                <button id="rollback" class="ghost">Rollback latest</button>
-                            </div>
-                        </div>
-                        <div id="checkpoint-list" class="list-placeholder">
-                            <div class="placeholder">No checkpoints detected.</div>
                         </div>
                     </section>
                 </main>
