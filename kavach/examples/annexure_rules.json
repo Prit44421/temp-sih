@@ -1,1010 +1,987 @@
-[
-  {
-    "os": "windows",
-    "module": "account_policies",
-    "rules": [
-      {
-        "id": "windows.account.password_policy",
-        "title": "Enforce password policy baselines",
-        "description": "Align Windows password history, age, length, and complexity requirements with Annexure A recommendations.",
-        "level": "strict",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce password history >=24; max age 90 days; min age 1 day; min length 12; complexity enabled; reversible encryption disabled",
-          "expect": "Manual verification required: enforce password history >=24; max age 90 days; min age 1 day; min length 12; complexity enabled; reversible encryption disabled"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Local Security Policy > Account Policies > Password Policy to match Annexure A values."
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce password history >=24; max age 90 days; min age 1 day; min length 12; complexity enabled; reversible encryption disabled",
-          "expect": "Manual verification required: enforce password history >=24; max age 90 days; min age 1 day; min length 12; complexity enabled; reversible encryption disabled"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
+{
+  "windows": {
+    "modules": {
+      "account_policies": {
+        "rules": [
+          {
+            "id": "windows.account.password_policy",
+            "title": "Enforce password policy baselines",
+            "description": "Align Windows password history, age, length, and complexity requirements with Annexure A recommendations.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).MinPasswordLength",
+              "expect": "12"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ADDefaultDomainPasswordPolicy -MinPasswordLength 12 -PasswordHistoryCount 24 -MaxPasswordAge 90.00:00:00 -MinPasswordAge 1.00:00:00 -ComplexityEnabled $true -ReversibleEncryptionEnabled $false"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).MinPasswordLength",
+              "expect": "12"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.account.lockout_policy",
+            "title": "Strengthen account lockout settings",
+            "description": "Apply account lockout duration, threshold, and administrator lockout protections per Annexure A.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).LockoutThreshold",
+              "expect": "5"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ADDefaultDomainPasswordPolicy -LockoutThreshold 5 -LockoutDuration 00:15:00 -LockoutObservationWindow 00:15:00"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).LockoutThreshold",
+              "expect": "5"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
       },
-      {
-        "id": "windows.account.lockout_policy",
-        "title": "Strengthen account lockout settings",
-        "description": "Apply account lockout duration, threshold, and administrator lockout protections per Annexure A.",
-        "level": "strict",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: lockout duration >=15 minutes; lockout threshold <=5 attempts; allow administrator account lockout enabled",
-          "expect": "Manual verification required: lockout duration >=15 minutes; lockout threshold <=5 attempts; allow administrator account lockout enabled"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: review Local Security Policy > Account Policies > Account Lockout Policy and configure values defined in Annexure A."
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: lockout duration >=15 minutes; lockout threshold <=5 attempts; allow administrator account lockout enabled",
-          "expect": "Manual verification required: lockout duration >=15 minutes; lockout threshold <=5 attempts; allow administrator account lockout enabled"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
+      "local_policies": {
+        "rules": [
+          {
+            "id": "windows.local.user_rights_assignment",
+            "title": "Hardening user rights assignments",
+            "description": "Ensure sensitive rights such as 'Access this computer from the network' and 'Back up files and directories' follow Annexure A baselines.",
+            "level": "moderate",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "secedit /export /cfg $env:temp\\secpol.cfg; $result = (gc $env:temp\\secpol.cfg | Select-String 'SeNetworkLogonRight').ToString().Contains('Administrators','Backup Operators','Users'); del $env:temp\\secpol.cfg; $result",
+              "expect": "True"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Manual remediation: Use secpol.msc to set \"Access this computer from the network\" to Administrators, Backup Operators, Users.'"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "secedit /export /cfg $env:temp\\secpol.cfg; $result = (gc $env:temp\\secpol.cfg | Select-String 'SeNetworkLogonRight').ToString().Contains('Administrators','Backup Operators','Users'); del $env:temp\\secpol.cfg; $result",
+              "expect": "True"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "security_options": {
+        "rules": [
+          {
+            "id": "windows.security.accounts",
+            "title": "Secure built-in accounts",
+            "description": "Apply Annexure A guidance for Microsoft account blocking, guest status, blank password usage, and renaming privileged accounts.",
+            "level": "moderate",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-LocalUser -Name Guest).Enabled",
+              "expect": "False"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Disable-LocalUser -Name 'Guest'"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-LocalUser -Name Guest).Enabled",
+              "expect": "False"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.security.interactive_logon",
+            "title": "Enforce secure interactive logon",
+            "description": "Mandate CTRL+ALT+DEL, hide last signed-in user, set machine lockout/inactivity thresholds, and present logon banners as per Annexure A.",
+            "level": "moderate",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'DisableCAD').DisableCAD",
+              "expect": "0"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'DisableCAD' -Value 0"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'DisableCAD').DisableCAD",
+              "expect": "0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.security.network",
+            "title": "Harden Microsoft network server and security options",
+            "description": "Follow Annexure A for session timeouts, SMB anonymous restrictions, credential storage, Kerberos encryption types, and NTLM SSP requirements.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Lsa').LmCompatibilityLevel",
+              "expect": "5"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Lsa' -Name 'LmCompatibilityLevel' -Value 5"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Lsa').LmCompatibilityLevel",
+              "expect": "5"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "system_settings": {
+        "rules": [
+          {
+            "id": "windows.system.uac",
+            "title": "User Account Control configuration",
+            "description": "Ensure all Annexure A UAC policies (Admin Approval, elevation prompts, secure desktop, application install detection) are enabled.",
+            "level": "moderate",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System').EnableLUA",
+              "expect": "1"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System').EnableLUA",
+              "expect": "1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.system.services",
+            "title": "Disable high-risk Windows services",
+            "description": "Review Annexure A service hardening list (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, legacy protocols, Xbox, etc.) and disable unless explicitly required.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-Service -Name TermService).StartType",
+              "expect": "Disabled"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-Service -Name TermService -StartupType Disabled; Stop-Service -Name TermService"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-Service -Name TermService).StartType",
+              "expect": "Disabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "firewall": {
+        "rules": [
+          {
+            "id": "windows.firewall.private_profile",
+            "title": "Windows Firewall private profile baseline",
+            "description": "Ensure the private profile enforces On state, inbound blocking, outbound allow, notifications off, and logging thresholds per Annexure A.",
+            "level": "basic",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-NetFirewallProfile -Name Private).Enabled",
+              "expect": "True"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-NetFirewallProfile -Name Private -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Allow"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-NetFirewallProfile -Name Private).Enabled",
+              "expect": "True"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.firewall.public_profile",
+            "title": "Windows Firewall public profile baseline",
+            "description": "Apply Annexure A public profile guidance for firewall state, inbound/outbound behaviour, local rule overrides, and logging.",
+            "level": "basic",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-NetFirewallProfile -Name Public).Enabled",
+              "expect": "True"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-NetFirewallProfile -Name Public -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Allow"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-NetFirewallProfile -Name Public).Enabled",
+              "expect": "True"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "audit_policy": {
+        "rules": [
+          {
+            "id": "windows.audit.advanced_audit_policy",
+            "title": "Advanced audit policy coverage",
+            "description": "Ensure account logon, logon/logoff, object access, policy change, privilege use, system integrity, and security settings match Annexure A guidance.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "shell",
+              "cmd": "auditpol /get /subcategory:\"User Account Management\" /r | findstr /R /C:\"Success and Failure\"",
+              "expect": "Success and Failure"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "auditpol /set /subcategory:\"User Account Management\" /success:enable /failure:enable"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "auditpol /get /subcategory:\"User Account Management\" /r | findstr /R /C:\"Success and Failure\"",
+              "expect": "Success and Failure"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.audit.autoplay_policies",
+            "title": "Restrict AutoPlay functionality",
+            "description": "Implement Annexure A AutoPlay controls (disable non-volume devices, autorun execution, and enforce Turn off AutoPlay).",
+            "level": "basic",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer').NoDriveTypeAutoRun",
+              "expect": "255"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer' -Name 'NoDriveTypeAutoRun' -Value 255"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer').NoDriveTypeAutoRun",
+              "expect": "255"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "application_guard": {
+        "rules": [
+          {
+            "id": "windows.application_guard",
+            "title": "Microsoft Defender Application Guard baseline",
+            "description": "Apply Annexure A settings for auditing, data persistence, clipboard, download restrictions, and device access in Application Guard.",
+            "level": "moderate",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Policies\\Microsoft\\AppHVSI').ClipboardRedirection",
+              "expect": "2"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ItemProperty -Path 'HKLM:\\Software\\Policies\\Microsoft\\AppHVSI' -Name 'ClipboardRedirection' -Value 2"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ItemProperty -Path 'HKLM:\\Software\\Policies\\Microsoft\\AppHVSI').ClipboardRedirection",
+              "expect": "2"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
       }
-    ]
+    }
   },
-  {
-    "os": "windows",
-    "module": "local_policies",
-    "rules": [
-      {
-        "id": "windows.local.user_rights_assignment",
-        "title": "Hardening user rights assignments",
-        "description": "Ensure sensitive rights such as 'Access this computer from the network' and 'Back up files and directories' follow Annexure A baselines.",
-        "level": "moderate",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: user rights assignments match Annexure A table (Credential Manager, network access, memory quotas, log on locally, backup, system time, time zone)",
-          "expect": "Manual verification required: user rights assignments match Annexure A table (Credential Manager, network access, memory quotas, log on locally, backup, system time, time zone)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update Local Security Policy > Local Policies > User Rights Assignment per Annexure A."
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: user rights assignments match Annexure A table (Credential Manager, network access, memory quotas, log on locally, backup, system time, time zone)",
-          "expect": "Manual verification required: user rights assignments match Annexure A table (Credential Manager, network access, memory quotas, log on locally, backup, system time, time zone)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
+  "linux": {
+    "modules": {
+      "filesystem": {
+        "rules": [
+          {
+            "id": "linux.filesystem.kernel_modules",
+            "title": "Disable unused filesystem kernel modules",
+            "description": "Ensure cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage, and other unused filesystems are absent per Annexure B.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "modprobe -n -v cramfs",
+              "expect": "install /bin/true"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install cramfs /bin/true' >> /etc/modprobe.d/security.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "modprobe -n -v cramfs",
+              "expect": "install /bin/true"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.partitions",
+            "title": "Harden critical filesystem partitions",
+            "description": "Ensure separate partitions and mount options (nodev, nosuid, noexec) for /tmp, /dev/shm, /home, /var, /var/tmp, /var/log, and /var/log/audit per Annexure B.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "findmnt -n -o OPTIONS /tmp | grep 'noexec' && echo 'Hardened'",
+              "expect": "Hardened"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'tmpfs /tmp tmpfs defaults,rw,nosuid,nodev,noexec,relatime 0 0' >> /etc/fstab && mount -o remount,noexec /tmp"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "findmnt -n -o OPTIONS /tmp | grep 'noexec' && echo 'Hardened'",
+              "expect": "Hardened"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "package_management": {
+        "rules": [
+          {
+            "id": "linux.packages.bootloader",
+            "title": "Protect bootloader",
+            "description": "Configure bootloader password and secure access to boot configuration per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /boot/grub2/grub.cfg",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /boot/grub2/grub.cfg"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /boot/grub2/grub.cfg",
+              "expect": "600"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.packages.process_hardening",
+            "title": "Enable process hardening",
+            "description": "Ensure ASLR, ptrace_scope restrictions, core dump controls, prelink removal, and disable automatic error reporting as per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl kernel.randomize_va_space | awk '{print $3}'",
+              "expect": "2"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'kernel.randomize_va_space = 2' >> /etc/sysctl.d/99-security.conf && sysctl -p"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl kernel.randomize_va_space | awk '{print $3}'",
+              "expect": "2"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.packages.warning_banners",
+            "title": "Command line warning banners",
+            "description": "Confirm local and remote login banners (/etc/motd, /etc/issue, /etc/issue.net) exist with controlled permissions per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/motd",
+              "expect": "644"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 644 /etc/motd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/motd",
+              "expect": "644"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "services": {
+        "rules": [
+          {
+            "id": "linux.services.server_daemons",
+            "title": "Remove unused server services",
+            "description": "Ensure autofs, avahi, dhcpd, named, dnsmasq, ftp, ldap, mail, nfs, nis, printing, rpcbind, rsync, samba, snmp, tftp, proxy, web, xinetd, X11, and unnecessary mail transfer agents are disabled as per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled autofs",
+              "expect": "disabled"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl disable --now autofs"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled autofs",
+              "expect": "disabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.services.client_tools",
+            "title": "Remove legacy client utilities",
+            "description": "Ensure NIS, rsh, talk, telnet, ldap, and ftp clients are not installed per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "! command -v telnet",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt-get purge -y telnet || yum remove -y telnet"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "! command -v telnet",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.services.time_synchronization",
+            "title": "Enforce time synchronization",
+            "description": "Run a single authorized time sync daemon (systemd-timesyncd or chrony) configured with approved sources per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-active systemd-timesyncd",
+              "expect": "active"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl enable --now systemd-timesyncd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-active systemd-timesyncd",
+              "expect": "active"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.services.job_schedulers",
+            "title": "Secure cron schedulers",
+            "description": "Confirm cron daemon is active, cron directories have restrictive permissions, and only authorized users can schedule jobs per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/crontab",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/crontab"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/crontab",
+              "expect": "600"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "network": {
+        "rules": [
+          {
+            "id": "linux.network.devices",
+            "title": "Harden network interfaces",
+            "description": "Document IPv6 status, disable wireless interfaces when unused, and ensure Bluetooth services are off per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "rfkill list | grep -i bluetooth | grep -q 'Soft blocked: yes' && echo 'Blocked'",
+              "expect": "Blocked"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "rfkill block bluetooth"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "rfkill list | grep -i bluetooth | grep -q 'Soft blocked: yes' && echo 'Blocked'",
+              "expect": "Blocked"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.network.kernel_modules",
+            "title": "Disable unused network kernel modules",
+            "description": "Blacklist dccp, tipc, rds, sctp, and other unneeded network protocols per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "modprobe -n -v dccp",
+              "expect": "install /bin/true"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install dccp /bin/true' >> /etc/modprobe.d/security.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "modprobe -n -v dccp",
+              "expect": "install /bin/true"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.network.kernel_parameters",
+            "title": "Harden sysctl network parameters",
+            "description": "Implement Annexure B sysctl settings (disable forwarding, ICMP redirects, log suspicious packets, enable reverse path filtering, enable TCP SYN cookies, etc.).",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.ip_forward | awk '{print $3}'",
+              "expect": "0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'net.ipv4.ip_forward = 0' >> /etc/sysctl.d/99-security.conf && sysctl -p"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.ip_forward | awk '{print $3}'",
+              "expect": "0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "firewall": {
+        "rules": [
+          {
+            "id": "linux.firewall.ufw",
+            "title": "Uncomplicated Firewall baseline",
+            "description": "Ensure ufw is the sole firewall front-end, enabled with loopback allowances, explicit inbound rules, outbound policy review, and default deny configuration per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "ufw status | grep -q 'Status: active' && echo 'active'",
+              "expect": "active"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "ufw enable && ufw default deny incoming && ufw default allow outgoing"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "ufw status | grep -q 'Status: active' && echo 'active'",
+              "expect": "active"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "access_control": {
+        "rules": [
+          {
+            "id": "linux.access.sshd",
+            "title": "Secure SSH daemon",
+            "description": "Apply Annexure B sshd hardening (permissions, access controls, banners, crypto policies, authentication limits, disable root login, enforce PAM).",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^PermitRootLogin' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config && systemctl restart sshd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^PermitRootLogin' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.access.sudo",
+            "title": "Harden sudo privilege escalation",
+            "description": "Ensure sudo and su usage follow Annexure B (install sudo, enforce PTY, log usage, require authentication, configure timeouts, restrict su).",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^Defaults\\s\\+use_pty' /etc/sudoers /etc/sudoers.d/* && echo 'Found'",
+              "expect": "Found"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Defaults use_pty' >> /etc/sudoers"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^Defaults\\s\\+use_pty' /etc/sudoers /etc/sudoers.d/* && echo 'Found'",
+              "expect": "Found"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.access.pam",
+            "title": "Configure PAM password policies",
+            "description": "Ensure pam, pam_faillock, pam_pwquality, and pam_pwhistory modules are installed and enforced according to Annexure B.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep 'pam_pwquality.so' /etc/pam.d/common-password | grep -q 'minlen=12' && echo 'minlen=12 set'",
+              "expect": "minlen=12 set"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i '/pam_pwquality.so/ s/$/ minlen=12/' /etc/pam.d/common-password"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep 'pam_pwquality.so' /etc/pam.d/common-password | grep -q 'minlen=12' && echo 'minlen=12 set'",
+              "expect": "minlen=12 set"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "user_accounts": {
+        "rules": [
+          {
+            "id": "linux.accounts.shadow",
+            "title": "Shadow password suite settings",
+            "description": "Configure password expiration, minimum days, warning periods, hashing algorithms, inactive lock, and root/system account controls per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}'",
+              "expect": "90"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS 90/' /etc/login.defs"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}'",
+              "expect": "90"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.accounts.defaults",
+            "title": "Default user environment",
+            "description": "Ensure nologin shell is omitted, default TMOUT and umask set, and dotfile permissions follow Annexure B guidance.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep '^UMASK' /etc/login.defs | awk '{print $2}'",
+              "expect": "027"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^UMASK.*/UMASK 027/' /etc/login.defs"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep '^UMASK' /etc/login.defs | awk '{print $2}'",
+              "expect": "027"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "logging_auditing": {
+        "rules": [
+          {
+            "id": "linux.logging.systemd_journald",
+            "title": "System logging baseline",
+            "description": "Ensure systemd-journald is enabled, log file permissions and rotation configured, and rsyslog integration follows Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled systemd-journald",
+              "expect": "enabled"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl enable systemd-journald"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled systemd-journald",
+              "expect": "enabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.logging.auditd_service",
+            "title": "Auditd service baseline",
+            "description": "Install and enable auditd, ensure pre-audit initialisation, backlog limits, and retention policies follow Annexure B.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled auditd",
+              "expect": "enabled"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl enable --now auditd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled auditd",
+              "expect": "enabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.logging.auditd_rules",
+            "title": "Auditd rules coverage",
+            "description": "Implement Annexure B audit rules for sudo scope, privileged commands, file access, policy changes, kernel module events, and immutable configuration.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -q '^-e 2' /etc/audit/rules.d/99-finalize.rules && echo 'Immutable'",
+              "expect": "Immutable"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo '-e 2' >> /etc/audit/rules.d/99-finalize.rules && augenrules --load"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -q '^-e 2' /etc/audit/rules.d/99-finalize.rules && echo 'Immutable'",
+              "expect": "Immutable"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.logging.auditd_file_access",
+            "title": "Protect audit logs",
+            "description": "Ensure audit log files, directories, and tools have secure ownership and permissions, and cryptographic integrity is enforced as per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /var/log/audit/audit.log",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /var/log/audit/audit.log"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /var/log/audit/audit.log",
+              "expect": "600"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.logging.integrity",
+            "title": "Filesystem integrity monitoring",
+            "description": "Install and schedule AIDE (or equivalent) and protect audit tools cryptographically per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "command -v aide &>/dev/null && echo 'Installed'",
+              "expect": "Installed"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt-get install -y aide || yum install -y aide"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "command -v aide &>/dev/null && echo 'Installed'",
+              "expect": "Installed"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "system_maintenance": {
+        "rules": [
+          {
+            "id": "linux.maintenance.file_permissions",
+            "title": "Secure critical system files",
+            "description": "Ensure /etc/passwd, group, shadow, gshadow, shells, opasswd, and related files have secure permissions, no world-writable files, and no orphaned files per Annexure B.",
+            "level": "moderate",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/passwd",
+              "expect": "644"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 644 /etc/passwd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/passwd",
+              "expect": "644"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.maintenance.user_group_settings",
+            "title": "Validate local user and group configuration",
+            "description": "Ensure passwd entries use shadowed passwords, no duplicate UIDs/GIDs/names, shadow group empty, home directories and dotfiles secured per Annexure B.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "cut -f3 -d':' /etc/passwd | sort -n | uniq -c | while read x ; do [ -z \"${x}\" ] && break; set - $x; if [ $1 -gt 1 ]; then echo 'Duplicate'; exit 1; fi; done; echo 'OK'",
+              "expect": "OK"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Manual remediation: Edit /etc/passwd to resolve duplicate UIDs.'"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "cut -f3 -d':' /etc/passwd | sort -n | uniq -c | while read x ; do [ -z \"${x}\" ] && break; set - $x; if [ $1 -gt 1 ]; then echo 'Duplicate'; exit 1; fi; done; echo 'OK'",
+              "expect": "OK"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
       }
-    ]
-  },
-  {
-    "os": "windows",
-    "module": "security_options",
-    "rules": [
-      {
-        "id": "windows.security.accounts",
-        "title": "Secure built-in accounts",
-        "description": "Apply Annexure A guidance for Microsoft account blocking, guest status, blank password usage, and renaming privileged accounts.",
-        "level": "moderate",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: block Microsoft accounts; disable guest; limit blank passwords; rename default admin and guest accounts",
-          "expect": "Manual verification required: block Microsoft accounts; disable guest; limit blank passwords; rename default admin and guest accounts"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Local Security Policy > Local Policies > Security Options > Accounts settings." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: block Microsoft accounts; disable guest; limit blank passwords; rename default admin and guest accounts",
-          "expect": "Manual verification required: block Microsoft accounts; disable guest; limit blank passwords; rename default admin and guest accounts"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "windows.security.interactive_logon",
-        "title": "Enforce secure interactive logon",
-        "description": "Mandate CTRL+ALT+DEL, hide last signed-in user, set machine lockout/inactivity thresholds, and present logon banners as per Annexure A.",
-        "level": "moderate",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce CTRL+ALT+DEL; hide last signed-in; machine lockout <=10; inactivity limit <=900s; logon messages configured; password change prompts 5-14 days",
-          "expect": "Manual verification required: enforce CTRL+ALT+DEL; hide last signed-in; machine lockout <=10; inactivity limit <=900s; logon messages configured; password change prompts 5-14 days"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Local Security Policy > Security Options > Interactive logon.* entries per Annexure A." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce CTRL+ALT+DEL; hide last signed-in; machine lockout <=10; inactivity limit <=900s; logon messages configured; password change prompts 5-14 days",
-          "expect": "Manual verification required: enforce CTRL+ALT+DEL; hide last signed-in; machine lockout <=10; inactivity limit <=900s; logon messages configured; password change prompts 5-14 days"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "windows.security.network",
-        "title": "Harden Microsoft network server and security options",
-        "description": "Follow Annexure A for session timeouts, SMB anonymous restrictions, credential storage, Kerberos encryption types, and NTLM SSP requirements.",
-        "level": "strict",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: idle session <=15; disconnect on logon hour expiry; disable anonymous SAM/Everyone; block credential storage; enforce AES Kerberos; disable LANMAN hash; require NTLMv2 + 128-bit",
-          "expect": "Manual verification required: idle session <=15; disconnect on logon hour expiry; disable anonymous SAM/Everyone; block credential storage; enforce AES Kerberos; disable LANMAN hash; require NTLMv2 + 128-bit"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Local Security Policy > Security Options > Microsoft network server and Network security entries." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: idle session <=15; disconnect on logon hour expiry; disable anonymous SAM/Everyone; block credential storage; enforce AES Kerberos; disable LANMAN hash; require NTLMv2 + 128-bit",
-          "expect": "Manual verification required: idle session <=15; disconnect on logon hour expiry; disable anonymous SAM/Everyone; block credential storage; enforce AES Kerberos; disable LANMAN hash; require NTLMv2 + 128-bit"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "windows",
-    "module": "system_settings",
-    "rules": [
-      {
-        "id": "windows.system.uac",
-        "title": "User Account Control configuration",
-        "description": "Ensure all Annexure A UAC policies (Admin Approval, elevation prompts, secure desktop, application install detection) are enabled.",
-        "level": "moderate",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable UAC for built-in admin; prompt consent on secure desktop; deny standard elevation; detect installs; run admins in approval mode; switch to secure desktop",
-          "expect": "Manual verification required: enable UAC for built-in admin; prompt consent on secure desktop; deny standard elevation; detect installs; run admins in approval mode; switch to secure desktop"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Local Security Policy > Security Options > User Account Control settings." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable UAC for built-in admin; prompt consent on secure desktop; deny standard elevation; detect installs; run admins in approval mode; switch to secure desktop",
-          "expect": "Manual verification required: enable UAC for built-in admin; prompt consent on secure desktop; deny standard elevation; detect installs; run admins in approval mode; switch to secure desktop"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "windows.system.services",
-        "title": "Disable high-risk Windows services",
-        "description": "Review Annexure A service hardening list (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, legacy protocols, Xbox, etc.) and disable unless explicitly required.",
-        "level": "strict",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: confirm Annexure A services are Disabled or Not Installed (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, Simple TCP/IP, SNMP, UPnP, WMSvc, WerSvc, Wecsvc, WMPNetworkSvc, icssvc, PushToInstall, WinRM, W3SVC, Xbox services)",
-          "expect": "Manual verification required: confirm Annexure A services are Disabled or Not Installed (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, Simple TCP/IP, SNMP, UPnP, WMSvc, WerSvc, Wecsvc, WMPNetworkSvc, icssvc, PushToInstall, WinRM, W3SVC, Xbox services)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: use services.msc or PowerShell Set-Service to disable Annexure A listed services unless business-approved." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: confirm Annexure A services are Disabled or Not Installed (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, Simple TCP/IP, SNMP, UPnP, WMSvc, WerSvc, Wecsvc, WMPNetworkSvc, icssvc, PushToInstall, WinRM, W3SVC, Xbox services)",
-          "expect": "Manual verification required: confirm Annexure A services are Disabled or Not Installed (Bluetooth, Remote Desktop, RPC Locator, Remote Registry, Routing, Simple TCP/IP, SNMP, UPnP, WMSvc, WerSvc, Wecsvc, WMPNetworkSvc, icssvc, PushToInstall, WinRM, W3SVC, Xbox services)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "windows",
-    "module": "firewall",
-    "rules": [
-      {
-        "id": "windows.firewall.private_profile",
-        "title": "Windows Firewall private profile baseline",
-        "description": "Ensure the private profile enforces On state, inbound blocking, outbound allow, notifications off, and logging thresholds per Annexure A.",
-        "level": "basic",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: private firewall on; inbound block; outbound allow; notifications off; log file %SystemRoot%\\System32\\logfiles\\firewall\\privatefw.log; size >=16384KB; log drops and successes",
-          "expect": "Manual verification required: private firewall on; inbound block; outbound allow; notifications off; log file %SystemRoot%\\System32\\logfiles\\firewall\\privatefw.log; size >=16384KB; log drops and successes"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: use wf.msc or netsh advfirewall set privateprofile commands to match Annexure A private profile settings." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: private firewall on; inbound block; outbound allow; notifications off; log file %SystemRoot%\\System32\\logfiles\\firewall\\privatefw.log; size >=16384KB; log drops and successes",
-          "expect": "Manual verification required: private firewall on; inbound block; outbound allow; notifications off; log file %SystemRoot%\\System32\\logfiles\\firewall\\privatefw.log; size >=16384KB; log drops and successes"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "windows.firewall.public_profile",
-        "title": "Windows Firewall public profile baseline",
-        "description": "Apply Annexure A public profile guidance for firewall state, inbound/outbound behaviour, local rule overrides, and logging.",
-        "level": "basic",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: public firewall on; inbound block; outbound allow; notifications off; no local firewall or IPsec rules; log file %SystemRoot%\\System32\\logfiles\\firewall\\publicfw.log; size >=16384KB; log drops and successes",
-          "expect": "Manual verification required: public firewall on; inbound block; outbound allow; notifications off; no local firewall or IPsec rules; log file %SystemRoot%\\System32\\logfiles\\firewall\\publicfw.log; size >=16384KB; log drops and successes"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: use wf.msc or netsh advfirewall set publicprofile commands to match Annexure A public profile settings." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: public firewall on; inbound block; outbound allow; notifications off; no local firewall or IPsec rules; log file %SystemRoot%\\System32\\logfiles\\firewall\\publicfw.log; size >=16384KB; log drops and successes",
-          "expect": "Manual verification required: public firewall on; inbound block; outbound allow; notifications off; no local firewall or IPsec rules; log file %SystemRoot%\\System32\\logfiles\\firewall\\publicfw.log; size >=16384KB; log drops and successes"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "windows",
-    "module": "audit_policy",
-    "rules": [
-      {
-        "id": "windows.audit.advanced_audit_policy",
-        "title": "Advanced audit policy coverage",
-        "description": "Ensure account logon, logon/logoff, object access, policy change, privilege use, system integrity, and security settings match Annexure A guidance.",
-        "level": "strict",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable Annexure A audit categories (credential validation, group/user management, PNP activity, process creation, account lockout, logon events, file share, removable storage, audit policy change, other policy change, sensitive privilege use, system integrity, lock screen camera, SMBv1 disable)",
-          "expect": "Manual verification required: enable Annexure A audit categories (credential validation, group/user management, PNP activity, process creation, account lockout, logon events, file share, removable storage, audit policy change, other policy change, sensitive privilege use, system integrity, lock screen camera, SMBv1 disable)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Advanced Audit Policy via secpol.msc or auditpol.exe to align with Annexure A." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable Annexure A audit categories (credential validation, group/user management, PNP activity, process creation, account lockout, logon events, file share, removable storage, audit policy change, other policy change, sensitive privilege use, system integrity, lock screen camera, SMBv1 disable)",
-          "expect": "Manual verification required: enable Annexure A audit categories (credential validation, group/user management, PNP activity, process creation, account lockout, logon events, file share, removable storage, audit policy change, other policy change, sensitive privilege use, system integrity, lock screen camera, SMBv1 disable)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "windows.audit.autoplay_policies",
-        "title": "Restrict AutoPlay functionality",
-        "description": "Implement Annexure A AutoPlay controls (disable non-volume devices, autorun execution, and enforce Turn off AutoPlay).",
-        "level": "basic",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: disable autoplay for non-volume devices; set autorun default to do not execute; turn off autoplay for all drives",
-          "expect": "Manual verification required: disable autoplay for non-volume devices; set autorun default to do not execute; turn off autoplay for all drives"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Computer Configuration > Administrative Templates > Windows Components > AutoPlay Policies per Annexure A." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: disable autoplay for non-volume devices; set autorun default to do not execute; turn off autoplay for all drives",
-          "expect": "Manual verification required: disable autoplay for non-volume devices; set autorun default to do not execute; turn off autoplay for all drives"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "windows",
-    "module": "application_guard",
-    "rules": [
-      {
-        "id": "windows.application_guard",
-        "title": "Microsoft Defender Application Guard baseline",
-        "description": "Apply Annexure A settings for auditing, data persistence, clipboard, download restrictions, and device access in Application Guard.",
-        "level": "moderate",
-        "platforms": ["windows"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable MDAG auditing; disable camera/microphone; disable persistence; block host downloads; enable isolated->host clipboard only",
-          "expect": "Manual verification required: enable MDAG auditing; disable camera/microphone; disable persistence; block host downloads; enable isolated->host clipboard only"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure Application Guard policies via Group Policy per Annexure A section 7." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enable MDAG auditing; disable camera/microphone; disable persistence; block host downloads; enable isolated->host clipboard only",
-          "expect": "Manual verification required: enable MDAG auditing; disable camera/microphone; disable persistence; block host downloads; enable isolated->host clipboard only"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "filesystem",
-    "rules": [
-      {
-        "id": "linux.filesystem.kernel_modules",
-        "title": "Disable unused filesystem kernel modules",
-        "description": "Ensure cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage, and other unused filesystems are absent per Annexure B.",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: blacklist unused filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage)",
-          "expect": "Manual verification required: blacklist unused filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: create /etc/modprobe.d/blacklist.conf entries and rebuild initramfs per Annexure B filesystem guidance." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: blacklist unused filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage)",
-          "expect": "Manual verification required: blacklist unused filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, overlayfs, squashfs, udf, usb-storage)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.filesystem.partitions",
-        "title": "Harden critical filesystem partitions",
-        "description": "Ensure separate partitions and mount options (nodev, nosuid, noexec) for /tmp, /dev/shm, /home, /var, /var/tmp, /var/log, and /var/log/audit per Annexure B.",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce Annexure B mount layout (separate partitions and nodev/nosuid/noexec flags for tmp, dev/shm, home, var, var/tmp, var/log, var/log/audit)",
-          "expect": "Manual verification required: enforce Annexure B mount layout (separate partitions and nodev/nosuid/noexec flags for tmp, dev/shm, home, var, var/tmp, var/log, var/log/audit)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/fstab and remount partitions to match Annexure B filesystem partition standards." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: enforce Annexure B mount layout (separate partitions and nodev/nosuid/noexec flags for tmp, dev/shm, home, var, var/tmp, var/log, var/log/audit)",
-          "expect": "Manual verification required: enforce Annexure B mount layout (separate partitions and nodev/nosuid/noexec flags for tmp, dev/shm, home, var, var/tmp, var/log, var/log/audit)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "package_management",
-    "rules": [
-      {
-        "id": "linux.packages.bootloader",
-        "title": "Protect bootloader",
-        "description": "Configure bootloader password and secure access to boot configuration per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: bootloader password set and config permissions hardened",
-          "expect": "Manual verification required: bootloader password set and config permissions hardened"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: use grub-mkpasswd-pbkdf2 and update /etc/grub.d templates and permissions per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: bootloader password set and config permissions hardened",
-          "expect": "Manual verification required: bootloader password set and config permissions hardened"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.packages.process_hardening",
-        "title": "Enable process hardening",
-        "description": "Ensure ASLR, ptrace_scope restrictions, core dump controls, prelink removal, and disable automatic error reporting as per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: ASLR enabled; ptrace_scope restricted; core dumps limited; prelink absent; automatic error reporting disabled",
-          "expect": "Manual verification required: ASLR enabled; ptrace_scope restricted; core dumps limited; prelink absent; automatic error reporting disabled"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure /etc/sysctl.d, /etc/security/limits.conf, and remove prelink/abrtd packages per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: ASLR enabled; ptrace_scope restricted; core dumps limited; prelink absent; automatic error reporting disabled",
-          "expect": "Manual verification required: ASLR enabled; ptrace_scope restricted; core dumps limited; prelink absent; automatic error reporting disabled"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.packages.warning_banners",
-        "title": "Command line warning banners",
-        "description": "Confirm local and remote login banners (/etc/motd, /etc/issue, /etc/issue.net) exist with controlled permissions per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: configure login banners and secure motd/issue/issue.net permissions",
-          "expect": "Manual verification required: configure login banners and secure motd/issue/issue.net permissions"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: populate banner files with approved text and set root:root ownership and 0644 mode." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: configure login banners and secure motd/issue/issue.net permissions",
-          "expect": "Manual verification required: configure login banners and secure motd/issue/issue.net permissions"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "services",
-    "rules": [
-      {
-        "id": "linux.services.server_daemons",
-        "title": "Remove unused server services",
-        "description": "Ensure autofs, avahi, dhcpd, named, dnsmasq, ftp, ldap, mail, nfs, nis, printing, rpcbind, rsync, samba, snmp, tftp, proxy, web, xinetd, X11, and unnecessary mail transfer agents are disabled as per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: disable Annexure B server services unless explicitly approved",
-          "expect": "Manual verification required: disable Annexure B server services unless explicitly approved"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: stop and disable unneeded services via systemctl and remove packages if unused." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: disable Annexure B server services unless explicitly approved",
-          "expect": "Manual verification required: disable Annexure B server services unless explicitly approved"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.services.client_tools",
-        "title": "Remove legacy client utilities",
-        "description": "Ensure NIS, rsh, talk, telnet, ldap, and ftp clients are not installed per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: legacy client packages (nis, rsh, talk, telnet, ldap, ftp) removed",
-          "expect": "Manual verification required: legacy client packages (nis, rsh, talk, telnet, ldap, ftp) removed"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: remove legacy clients via package manager and prefer SSH-based tooling." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: legacy client packages (nis, rsh, talk, telnet, ldap, ftp) removed",
-          "expect": "Manual verification required: legacy client packages (nis, rsh, talk, telnet, ldap, ftp) removed"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.services.time_synchronization",
-        "title": "Enforce time synchronization",
-        "description": "Run a single authorized time sync daemon (systemd-timesyncd or chrony) configured with approved sources per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: exactly one time daemon (timesyncd or chrony) enabled with authorized servers",
-          "expect": "Manual verification required: exactly one time daemon (timesyncd or chrony) enabled with authorized servers"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: enable systemd-timesyncd or chrony with organization-approved NTP sources and disable alternatives." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: exactly one time daemon (timesyncd or chrony) enabled with authorized servers",
-          "expect": "Manual verification required: exactly one time daemon (timesyncd or chrony) enabled with authorized servers"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.services.job_schedulers",
-        "title": "Secure cron schedulers",
-        "description": "Confirm cron daemon is active, cron directories have restrictive permissions, and only authorized users can schedule jobs per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: cron service enabled; /etc/cron.* permissions hardened; cron.allow/cron.deny restrict access",
-          "expect": "Manual verification required: cron service enabled; /etc/cron.* permissions hardened; cron.allow/cron.deny restrict access"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: enable cron, set directories to 0700/0600 as appropriate, and manage cron.allow/den y files." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: cron service enabled; /etc/cron.* permissions hardened; cron.allow/cron.deny restrict access",
-          "expect": "Manual verification required: cron service enabled; /etc/cron.* permissions hardened; cron.allow/cron.deny restrict access"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "network",
-    "rules": [
-      {
-        "id": "linux.network.devices",
-        "title": "Harden network interfaces",
-        "description": "Document IPv6 status, disable wireless interfaces when unused, and ensure Bluetooth services are off per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: inventory IPv6 usage; disable unused wireless and bluetooth interfaces",
-          "expect": "Manual verification required: inventory IPv6 usage; disable unused wireless and bluetooth interfaces"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update NetworkManager/systemd-networkd and rfkill/BT service states to match Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: inventory IPv6 usage; disable unused wireless and bluetooth interfaces",
-          "expect": "Manual verification required: inventory IPv6 usage; disable unused wireless and bluetooth interfaces"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.network.kernel_modules",
-        "title": "Disable unused network kernel modules",
-        "description": "Blacklist dccp, tipc, rds, sctp, and other unneeded network protocols per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: blacklist dccp, tipc, rds, sctp modules",
-          "expect": "Manual verification required: blacklist dccp, tipc, rds, sctp modules"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: add blacklist entries under /etc/modprobe.d for unused network protocols." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: blacklist dccp, tipc, rds, sctp modules",
-          "expect": "Manual verification required: blacklist dccp, tipc, rds, sctp modules"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.network.kernel_parameters",
-        "title": "Harden sysctl network parameters",
-        "description": "Implement Annexure B sysctl settings (disable forwarding, ICMP redirects, log suspicious packets, enable reverse path filtering, enable TCP SYN cookies, etc.).",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sysctl parameters configured (ip_forward=0, send_redirects=0, ignore_bogus_icmp=1, ignore_broadcasts=1, accept_redirects=0, secure_redirects=0, rp_filter=1, accept_source_route=0, log_martians=1, tcp_syncookies=1, disable IPv6 RAs)",
-          "expect": "Manual verification required: sysctl parameters configured (ip_forward=0, send_redirects=0, ignore_bogus_icmp=1, ignore_broadcasts=1, accept_redirects=0, secure_redirects=0, rp_filter=1, accept_source_route=0, log_martians=1, tcp_syncookies=1, disable IPv6 RAs)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/sysctl.d hardening files and reload sysctl per Annexure B network settings." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sysctl parameters configured (ip_forward=0, send_redirects=0, ignore_bogus_icmp=1, ignore_broadcasts=1, accept_redirects=0, secure_redirects=0, rp_filter=1, accept_source_route=0, log_martians=1, tcp_syncookies=1, disable IPv6 RAs)",
-          "expect": "Manual verification required: sysctl parameters configured (ip_forward=0, send_redirects=0, ignore_bogus_icmp=1, ignore_broadcasts=1, accept_redirects=0, secure_redirects=0, rp_filter=1, accept_source_route=0, log_martians=1, tcp_syncookies=1, disable IPv6 RAs)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "firewall",
-    "rules": [
-      {
-        "id": "linux.firewall.ufw",
-        "title": "Uncomplicated Firewall baseline",
-        "description": "Ensure ufw is the sole firewall front-end, enabled with loopback allowances, explicit inbound rules, outbound policy review, and default deny configuration per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: ufw installed, enabled, default deny inbound/outbound policy set per Annexure B, loopback allowed, no conflicting iptables-persistent",
-          "expect": "Manual verification required: ufw installed, enabled, default deny inbound/outbound policy set per Annexure B, loopback allowed, no conflicting iptables-persistent"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure ufw default policies, define explicit allow rules, and remove iptables-persistent." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: ufw installed, enabled, default deny inbound/outbound policy set per Annexure B, loopback allowed, no conflicting iptables-persistent",
-          "expect": "Manual verification required: ufw installed, enabled, default deny inbound/outbound policy set per Annexure B, loopback allowed, no conflicting iptables-persistent"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "access_control",
-    "rules": [
-      {
-        "id": "linux.access.sshd",
-        "title": "Secure SSH daemon",
-        "description": "Apply Annexure B sshd hardening (permissions, access controls, banners, crypto policies, authentication limits, disable root login, enforce PAM).",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sshd_config permissions and settings match Annexure B (Ciphers, MACs, Kex, AllowUsers/Groups, Banner, ClientAlive, DisableForwarding, GSSAPI off, Hostbased off, IgnoreRhosts on, LoginGraceTime, LogLevel VERBOSE, MaxAuthTries, MaxSessions, MaxStartups, PermitEmptyPasswords off, PermitRootLogin off, PermitUserEnvironment off, UsePAM on)",
-          "expect": "Manual verification required: sshd_config permissions and settings match Annexure B (Ciphers, MACs, Kex, AllowUsers/Groups, Banner, ClientAlive, DisableForwarding, GSSAPI off, Hostbased off, IgnoreRhosts on, LoginGraceTime, LogLevel VERBOSE, MaxAuthTries, MaxSessions, MaxStartups, PermitEmptyPasswords off, PermitRootLogin off, PermitUserEnvironment off, UsePAM on)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: edit /etc/ssh/sshd_config and restart sshd to enforce Annexure B directives." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sshd_config permissions and settings match Annexure B (Ciphers, MACs, Kex, AllowUsers/Groups, Banner, ClientAlive, DisableForwarding, GSSAPI off, Hostbased off, IgnoreRhosts on, LoginGraceTime, LogLevel VERBOSE, MaxAuthTries, MaxSessions, MaxStartups, PermitEmptyPasswords off, PermitRootLogin off, PermitUserEnvironment off, UsePAM on)",
-          "expect": "Manual verification required: sshd_config permissions and settings match Annexure B (Ciphers, MACs, Kex, AllowUsers/Groups, Banner, ClientAlive, DisableForwarding, GSSAPI off, Hostbased off, IgnoreRhosts on, LoginGraceTime, LogLevel VERBOSE, MaxAuthTries, MaxSessions, MaxStartups, PermitEmptyPasswords off, PermitRootLogin off, PermitUserEnvironment off, UsePAM on)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.access.sudo",
-        "title": "Harden sudo privilege escalation",
-        "description": "Ensure sudo and su usage follow Annexure B (install sudo, enforce PTY, log usage, require authentication, configure timeouts, restrict su).",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sudo installed; Defaults use_pty, logfile, timestamp_timeout set; passwords required; su restricted to wheel",
-          "expect": "Manual verification required: sudo installed; Defaults use_pty, logfile, timestamp_timeout set; passwords required; su restricted to wheel"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/sudoers and PAM configs per Annexure B privilege escalation controls." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: sudo installed; Defaults use_pty, logfile, timestamp_timeout set; passwords required; su restricted to wheel",
-          "expect": "Manual verification required: sudo installed; Defaults use_pty, logfile, timestamp_timeout set; passwords required; su restricted to wheel"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.access.pam",
-        "title": "Configure PAM password policies",
-        "description": "Ensure pam, pam_faillock, pam_pwquality, and pam_pwhistory modules are installed and enforced according to Annexure B.",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: PAM modules installed and configured (pam_unix, pam_faillock with root lockout, pam_pwquality length/change/dictionary checks, pam_pwhistory enforced)",
-          "expect": "Manual verification required: PAM modules installed and configured (pam_unix, pam_faillock with root lockout, pam_pwquality length/change/dictionary checks, pam_pwhistory enforced)"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: run pam-auth-update and edit /etc/pam.d/system-auth/common-* per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: PAM modules installed and configured (pam_unix, pam_faillock with root lockout, pam_pwquality length/change/dictionary checks, pam_pwhistory enforced)",
-          "expect": "Manual verification required: PAM modules installed and configured (pam_unix, pam_faillock with root lockout, pam_pwquality length/change/dictionary checks, pam_pwhistory enforced)"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "user_accounts",
-    "rules": [
-      {
-        "id": "linux.accounts.shadow",
-        "title": "Shadow password suite settings",
-        "description": "Configure password expiration, minimum days, warning periods, hashing algorithms, inactive lock, and root/system account controls per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: chage defaults set (expiration, min days, warning); strong hash; inactive lock; only root UID/GID 0; system accounts non-login",
-          "expect": "Manual verification required: chage defaults set (expiration, min days, warning); strong hash; inactive lock; only root UID/GID 0; system accounts non-login"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/login.defs, /etc/passwd, and use usermod/chage per Annexure B shadow suite guidance." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: chage defaults set (expiration, min days, warning); strong hash; inactive lock; only root UID/GID 0; system accounts non-login",
-          "expect": "Manual verification required: chage defaults set (expiration, min days, warning); strong hash; inactive lock; only root UID/GID 0; system accounts non-login"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.accounts.defaults",
-        "title": "Default user environment",
-        "description": "Ensure nologin shell is omitted, default TMOUT and umask set, and dotfile permissions follow Annexure B guidance.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: /etc/shells excludes nologin; default TMOUT configured; default umask hardened; user dotfiles restricted",
-          "expect": "Manual verification required: /etc/shells excludes nologin; default TMOUT configured; default umask hardened; user dotfiles restricted"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/profile, /etc/bash.bashrc, and skeleton files per Annexure B defaults." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: /etc/shells excludes nologin; default TMOUT configured; default umask hardened; user dotfiles restricted",
-          "expect": "Manual verification required: /etc/shells excludes nologin; default TMOUT configured; default umask hardened; user dotfiles restricted"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "logging_auditing",
-    "rules": [
-      {
-        "id": "linux.logging.systemd_journald",
-        "title": "System logging baseline",
-        "description": "Ensure systemd-journald is enabled, log file permissions and rotation configured, and rsyslog integration follows Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: journald enabled; log file access/rotation configured; single logging stack enforced; rsyslog installed, enabled, forwarding configured per Annexure B",
-          "expect": "Manual verification required: journald enabled; log file access/rotation configured; single logging stack enforced; rsyslog installed, enabled, forwarding configured per Annexure B"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: review /etc/systemd/journald.conf, /etc/rsyslog.d, and logrotate configuration." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: journald enabled; log file access/rotation configured; single logging stack enforced; rsyslog installed, enabled, forwarding configured per Annexure B",
-          "expect": "Manual verification required: journald enabled; log file access/rotation configured; single logging stack enforced; rsyslog installed, enabled, forwarding configured per Annexure B"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.logging.auditd_service",
-        "title": "Auditd service baseline",
-        "description": "Install and enable auditd, ensure pre-audit initialisation, backlog limits, and retention policies follow Annexure B.",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: auditd installed; service enabled; audit=1 kernel parameter; backlog limit sufficient; log storage size configured; no auto delete; system actions on full logs defined; low space warnings configured",
-          "expect": "Manual verification required: auditd installed; service enabled; audit=1 kernel parameter; backlog limit sufficient; log storage size configured; no auto delete; system actions on full logs defined; low space warnings configured"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: configure /etc/audit/auditd.conf and GRUB parameters per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: auditd installed; service enabled; audit=1 kernel parameter; backlog limit sufficient; log storage size configured; no auto delete; system actions on full logs defined; low space warnings configured",
-          "expect": "Manual verification required: auditd installed; service enabled; audit=1 kernel parameter; backlog limit sufficient; log storage size configured; no auto delete; system actions on full logs defined; low space warnings configured"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.logging.auditd_rules",
-        "title": "Auditd rules coverage",
-        "description": "Implement Annexure B audit rules for sudo scope, privileged commands, file access, policy changes, kernel module events, and immutable configuration.",
-        "level": "strict",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: audit.rules capture sudoers changes, sudo usage, date/time, network env, privileged commands, file access, user/group modifications, DAC changes, mounts, session events, login/logout, file deletions, MAC changes, chcon/setfacl/chacl/usermod attempts, kernel module events, immutable flag set, on-disk matches running",
-          "expect": "Manual verification required: audit.rules capture sudoers changes, sudo usage, date/time, network env, privileged commands, file access, user/group modifications, DAC changes, mounts, session events, login/logout, file deletions, MAC changes, chcon/setfacl/chacl/usermod attempts, kernel module events, immutable flag set, on-disk matches running"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: update /etc/audit/rules.d/*.rules to include Annexure B coverage and reload auditd." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: audit.rules capture sudoers changes, sudo usage, date/time, network env, privileged commands, file access, user/group modifications, DAC changes, mounts, session events, login/logout, file deletions, MAC changes, chcon/setfacl/chacl/usermod attempts, kernel module events, immutable flag set, on-disk matches running",
-          "expect": "Manual verification required: audit.rules capture sudoers changes, sudo usage, date/time, network env, privileged commands, file access, user/group modifications, DAC changes, mounts, session events, login/logout, file deletions, MAC changes, chcon/setfacl/chacl/usermod attempts, kernel module events, immutable flag set, on-disk matches running"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.logging.auditd_file_access",
-        "title": "Protect audit logs",
-        "description": "Ensure audit log files, directories, and tools have secure ownership and permissions, and cryptographic integrity is enforced as per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: audit log files owned by root:root with 0600; directories secured; configuration files/tools owned and permissioned per Annexure B; integrity checking enabled",
-          "expect": "Manual verification required: audit log files owned by root:root with 0600; directories secured; configuration files/tools owned and permissioned per Annexure B; integrity checking enabled"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: adjust permissions and enable file integrity monitoring per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: audit log files owned by root:root with 0600; directories secured; configuration files/tools owned and permissioned per Annexure B; integrity checking enabled",
-          "expect": "Manual verification required: audit log files owned by root:root with 0600; directories secured; configuration files/tools owned and permissioned per Annexure B; integrity checking enabled"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.logging.integrity",
-        "title": "Filesystem integrity monitoring",
-        "description": "Install and schedule AIDE (or equivalent) and protect audit tools cryptographically per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: AIDE installed; regular checks scheduled; audit tools integrity protected",
-          "expect": "Manual verification required: AIDE installed; regular checks scheduled; audit tools integrity protected"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: install aide, initialize databases, schedule via cron/systemd timer, and secure binaries." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: AIDE installed; regular checks scheduled; audit tools integrity protected",
-          "expect": "Manual verification required: AIDE installed; regular checks scheduled; audit tools integrity protected"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
-  },
-  {
-    "os": "linux",
-    "module": "system_maintenance",
-    "rules": [
-      {
-        "id": "linux.maintenance.file_permissions",
-        "title": "Secure critical system files",
-        "description": "Ensure /etc/passwd, group, shadow, gshadow, shells, opasswd, and related files have secure permissions, no world-writable files, and no orphaned files per Annexure B.",
-        "level": "moderate",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: system files permissions per Annexure B (passwd, shadow, group, gshadow, shells, opasswd); no world-writable or orphaned files; SUID/SGID reviewed",
-          "expect": "Manual verification required: system files permissions per Annexure B (passwd, shadow, group, gshadow, shells, opasswd); no world-writable or orphaned files; SUID/SGID reviewed"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: adjust ownership/modes and audit filesystem for world-writable, orphaned, and SUID/SGID files." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: system files permissions per Annexure B (passwd, shadow, group, gshadow, shells, opasswd); no world-writable or orphaned files; SUID/SGID reviewed",
-          "expect": "Manual verification required: system files permissions per Annexure B (passwd, shadow, group, gshadow, shells, opasswd); no world-writable or orphaned files; SUID/SGID reviewed"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      },
-      {
-        "id": "linux.maintenance.user_group_settings",
-        "title": "Validate local user and group configuration",
-        "description": "Ensure passwd entries use shadowed passwords, no duplicate UIDs/GIDs/names, shadow group empty, home directories and dotfiles secured per Annexure B.",
-        "level": "basic",
-        "platforms": ["linux"],
-        "check": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: passwd uses shadow; shadow fields populated; groups synchronized; shadow group empty; no duplicate UIDs/GIDs/usernames/group names; home directories and dotfiles hardened",
-          "expect": "Manual verification required: passwd uses shadow; shadow fields populated; groups synchronized; shadow group empty; no duplicate UIDs/GIDs/usernames/group names; home directories and dotfiles hardened"
-        },
-        "remediate": {
-          "type": "shell",
-          "cmd": "echo Remediation guidance: reconcile passwd/group/shadow entries and adjust home directory permissions per Annexure B." 
-        },
-        "validate": {
-          "type": "shell",
-          "cmd": "echo Manual verification required: passwd uses shadow; shadow fields populated; groups synchronized; shadow group empty; no duplicate UIDs/GIDs/usernames/group names; home directories and dotfiles hardened",
-          "expect": "Manual verification required: passwd uses shadow; shadow fields populated; groups synchronized; shadow group empty; no duplicate UIDs/GIDs/usernames/group names; home directories and dotfiles hardened"
-        },
-        "rollback": {
-          "type": "restore_checkpoint"
-        }
-      }
-    ]
+    }
   }
-]
+}
+

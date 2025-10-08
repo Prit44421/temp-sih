@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import List, Literal
+from typing import Dict, List, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from kavach.backend.app.core.checkpoint_manager import CheckpointManager
+from kavach.backend.app.core.logging_manager import get_logging_manager
 from kavach.backend.app.core.os_detect import get_os_info
+from kavach.backend.app.core.report_generator import ReportGenerator
 from kavach.backend.app.core.rule_engine import RuleEngine
 from kavach.backend.app.models.rules import RuleSet
 
@@ -30,6 +32,8 @@ if not _RULES_FILE.exists() and _DEFAULT_RULES_PATH.exists():
 
 _checkpoint_manager = CheckpointManager()
 _rule_engine = RuleEngine(str(_RULES_FILE))
+_logging_manager = get_logging_manager()
+_report_generator = ReportGenerator()
 
 
 class ApplyRequest(BaseModel):
@@ -116,8 +120,8 @@ def get_rules() -> List[RuleSet]:
 def update_rules(rules: List[RuleSet]) -> List[RuleSet]:
     """Persist new rules and reload the engine."""
 
-    # Persist the new rules payload
-    serialised = [rule.model_dump(mode="json") for rule in rules]
+    # Persist the new rules payload using nested OS → modules → rules structure
+    serialised = _serialise_rulesets(rules)
     _RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
     _RULES_FILE.write_text(json.dumps(serialised, indent=2), encoding="utf-8")
 
@@ -125,3 +129,63 @@ def update_rules(rules: List[RuleSet]) -> List[RuleSet]:
     global _rule_engine
     _rule_engine = RuleEngine(str(_RULES_FILE), safe_mode=_rule_engine.safe_mode)
     return _rule_engine.ruleset
+
+
+@router.get("/logs/session")
+def get_session_logs() -> List[Dict]:
+    """Return logs for the current session."""
+    return _logging_manager.get_session_logs()
+
+
+@router.get("/logs/rule/{rule_id}")
+def get_rule_logs(rule_id: str, limit: int = 50) -> List[Dict]:
+    """Return execution history for a specific rule."""
+    return _logging_manager.get_rule_history(rule_id, limit)
+
+
+def _serialise_rulesets(rulesets: List[RuleSet]) -> Dict[str, Dict[str, Dict[str, List[Dict]]]]:
+    """Transform RuleSet objects into the nested JSON layout persisted on disk."""
+
+    output: Dict[str, Dict[str, Dict[str, List[Dict]]]] = {}
+
+    for ruleset in rulesets:
+        os_name = str(ruleset.os)
+        os_entry = output.setdefault(os_name, {"modules": {}})
+        modules = os_entry.setdefault("modules", {})
+
+        modules[ruleset.module] = {
+            "rules": [rule.model_dump(mode="json") for rule in ruleset.rules]
+        }
+
+    return output
+
+
+@router.post("/reports/generate")
+def generate_report(include_logs: bool = True) -> dict:
+    """Generate a comprehensive compliance report."""
+    try:
+        output_path = _report_generator.generate_compliance_report(
+            _rule_engine.ruleset,
+            include_logs=include_logs
+        )
+        return {
+            "message": "Report generated successfully",
+            "report_path": str(output_path),
+            "filename": output_path.name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
+
+@router.post("/reports/summary")
+def generate_summary_report() -> dict:
+    """Generate a quick summary report."""
+    try:
+        output_path = _report_generator.generate_summary_report()
+        return {
+            "message": "Summary report generated successfully",
+            "report_path": str(output_path),
+            "filename": output_path.name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate summary report: {str(e)}")

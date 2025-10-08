@@ -7,11 +7,12 @@ import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from pydantic import ValidationError
 
 from kavach.backend.app.core.checkpoint_manager import CheckpointManager, CheckpointRecord
+from kavach.backend.app.core.logging_manager import get_logging_manager
 from kavach.backend.app.core.os_detect import get_os_info
 from kavach.backend.app.models.rules import Rule, RuleAction, RuleSet
 
@@ -42,6 +43,7 @@ class RuleEngine:
         self.safe_mode = safe_mode
         self.os_info = get_os_info()
         self.checkpoint_manager = CheckpointManager()
+        self.logging_manager = get_logging_manager()
         self.ruleset: List[RuleSet] = self.load_rules()
 
     # ------------------------------------------------------------------
@@ -60,7 +62,17 @@ class RuleEngine:
             logger.error("Failed to parse rules file %s: %s", self.rules_file, exc)
             return []
 
-        records = payload if isinstance(payload, list) else [payload]
+        records: List[Dict[str, Any]] = []
+        if isinstance(payload, list):
+            records = payload
+        elif isinstance(payload, dict):
+            records = self._flatten_rules_payload(payload)
+        else:
+            logger.error(
+                "Unsupported rules payload type %s in %s", type(payload).__name__, self.rules_file
+            )
+            return []
+
         rulesets: List[RuleSet] = []
         for record in records:
             try:
@@ -68,8 +80,16 @@ class RuleEngine:
             except ValidationError as exc:
                 logger.error("Invalid rule definition encountered: %s", exc)
 
-        logger.info("Loaded %s rulesets from %s", len(rulesets), self.rules_file)
-        return rulesets
+        applicable_rulesets = [rs for rs in rulesets if self._is_platform_compatible(rs.os)]
+        if len(applicable_rulesets) != len(rulesets):
+            logger.info(
+                "Filtered %s of %s rulesets for current platform", len(applicable_rulesets), len(rulesets)
+            )
+
+        logger.info(
+            "Loaded %s rulesets (platform-filtered) from %s", len(applicable_rulesets), self.rules_file
+        )
+        return applicable_rulesets
 
     # ------------------------------------------------------------------
     # Public API
@@ -85,23 +105,39 @@ class RuleEngine:
             return
 
         logger.info("Applying rules at level %s (dry_run=%s, safe_mode=%s)", level, dry_run, self.safe_mode)
+        self.logging_manager.log_app_event("INFO", f"Starting rule application at level {level}")
+        
         for ruleset in self.ruleset:
             if not self._is_platform_compatible(ruleset.os):
                 logger.info("Skipping ruleset %s for OS %s", ruleset.module, ruleset.os)
                 continue
 
             logger.info("Processing module %s (%s)", ruleset.module, ruleset.os)
+            self.logging_manager.log_app_event("INFO", f"Processing module {ruleset.module} for {ruleset.os}")
+            
             for rule in ruleset.rules:
                 if not self._should_apply_rule(rule.level, level):
                     continue
                 self._apply_single_rule(rule, dry_run=dry_run)
+        
+        self.logging_manager.log_app_event("INFO", f"Completed rule application at level {level}")
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _apply_single_rule(self, rule: Rule, *, dry_run: bool) -> None:
         logger.info("Evaluating rule %s - %s", rule.id, rule.title)
+        
+        # Execute check phase
         check_result = self._execute_action(rule.check, phase="check")
+        self.logging_manager.log_rule_check(
+            rule.id, 
+            rule.check.cmd, 
+            check_result.stdout, 
+            check_result.stderr, 
+            check_result.exit_code
+        )
+        
         if not check_result.succeeded:
             logger.warning(
                 "Rule %s check returned non-zero exit code %s", rule.id, check_result.exit_code
@@ -111,12 +147,27 @@ class RuleEngine:
         observed = check_result.stdout.strip()
         if expected and observed == expected:
             logger.info("Rule %s already compliant", rule.id)
+            self.logging_manager.log_rule_event(
+                level="INFO",
+                rule_id=rule.id,
+                action="check",
+                status="compliant",
+                message=f"Rule {rule.id} is already compliant"
+            )
             return
 
         if dry_run:
             logger.info("Dry-run enabled; skipping remediation for %s", rule.id)
+            self.logging_manager.log_rule_event(
+                level="INFO",
+                rule_id=rule.id,
+                action="dry_run",
+                status="skipped",
+                message=f"Dry-run mode: skipping remediation for {rule.id}"
+            )
             return
 
+        # Create checkpoint before remediation
         checkpoint_id = self.checkpoint_manager.create_checkpoint(
             rule.id,
             {
@@ -125,8 +176,18 @@ class RuleEngine:
                 "exit_code": check_result.exit_code,
             },
         )
+        self.logging_manager.log_checkpoint_created(checkpoint_id, rule.id)
 
+        # Execute remediation phase
         remediate_result = self._execute_action(rule.remediate, phase="remediate")
+        self.logging_manager.log_rule_remediate(
+            rule.id,
+            rule.remediate.cmd,
+            remediate_result.stdout,
+            remediate_result.stderr,
+            remediate_result.exit_code
+        )
+        
         if not remediate_result.succeeded:
             logger.error(
                 "Remediation for rule %s failed with exit code %s: %s",
@@ -137,9 +198,21 @@ class RuleEngine:
             self._attempt_rollback(checkpoint_id)
             return
 
+        # Execute validation phase
         validate_result = self._execute_action(rule.validate, phase="validate")
         validate_expected = (rule.validate.expect or "").strip()
-        if not validate_result.succeeded or (validate_expected and validate_result.stdout.strip() != validate_expected):
+        validation_passed = validate_result.succeeded and (not validate_expected or validate_result.stdout.strip() == validate_expected)
+        
+        self.logging_manager.log_rule_validate(
+            rule.id,
+            rule.validate.cmd,
+            validate_result.stdout,
+            validate_result.stderr,
+            validate_result.exit_code,
+            validate_expected
+        )
+        
+        if not validation_passed:
             logger.error(
                 "Validation for rule %s failed (exit=%s, stdout=%r)",
                 rule.id,
@@ -150,6 +223,13 @@ class RuleEngine:
             return
 
         logger.info("Rule %s applied successfully", rule.id)
+        self.logging_manager.log_rule_event(
+            level="INFO",
+            rule_id=rule.id,
+            action="complete",
+            status="success",
+            message=f"Rule {rule.id} applied and validated successfully"
+        )
 
     def _execute_action(self, action: RuleAction, *, phase: str) -> CommandResult:
         """Execute a rule action and return its result."""
@@ -212,10 +292,12 @@ class RuleEngine:
         record: CheckpointRecord | None = self.checkpoint_manager.restore_checkpoint(checkpoint_id)
         if record is None:
             logger.error("Rollback failed; checkpoint %s could not be restored", checkpoint_id)
+            self.logging_manager.log_rollback_attempt(checkpoint_id, "unknown", False)
             return
 
         # TODO: Implement actual rollback logic leveraging ``record.data``.
         logger.warning("Rollback required for checkpoint %s; action not yet implemented", checkpoint_id)
+        self.logging_manager.log_rollback_attempt(checkpoint_id, record.rule_id, False)
 
     def _should_apply_rule(self, rule_level: str, target_level: str) -> bool:
         return LEVEL_PRIORITY[rule_level] <= LEVEL_PRIORITY[target_level]
@@ -229,6 +311,53 @@ class RuleEngine:
         if "linux" in system and target_os.lower() in {distro_id, "linux"}:
             return True
         return False
+
+    def _flatten_rules_payload(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Normalise nested OS→module→rules payloads into RuleSet dictionaries."""
+
+        flattened: List[Dict[str, Any]] = []
+
+        for os_name, os_block in payload.items():
+            if not isinstance(os_block, dict):
+                logger.warning("Skipping OS entry %r: expected object, got %s", os_name, type(os_block).__name__)
+                continue
+
+            modules_obj = os_block.get("modules") if "modules" in os_block else os_block
+            if not isinstance(modules_obj, dict):
+                logger.warning(
+                    "Skipping OS entry %r: modules should be an object, got %s",
+                    os_name,
+                    type(modules_obj).__name__,
+                )
+                continue
+
+            for module_name, module_payload in modules_obj.items():
+                if module_name == "modules":
+                    # Prevent infinite loops if structure nests modules key one level deeper without data.
+                    continue
+
+                rules_payload: Any
+                if isinstance(module_payload, dict) and "rules" in module_payload:
+                    rules_payload = module_payload.get("rules")
+                else:
+                    rules_payload = module_payload
+
+                if not isinstance(rules_payload, list):
+                    logger.warning(
+                        "Skipping module %r under %r: expected list of rules, got %s",
+                        module_name,
+                        os_name,
+                        type(rules_payload).__name__,
+                    )
+                    continue
+
+                flattened.append({
+                    "os": str(os_name),
+                    "module": str(module_name),
+                    "rules": rules_payload,
+                })
+
+        return flattened
 
 
 __all__ = ["RuleEngine", "CommandResult"]

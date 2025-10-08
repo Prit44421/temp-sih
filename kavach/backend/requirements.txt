@@ -3,3 +3,4 @@ uvicorn[standard]
 distro
 cryptography
 click
+reportlab

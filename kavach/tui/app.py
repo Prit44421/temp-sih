@@ -15,6 +15,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from kavach.backend.app.core.checkpoint_manager import CheckpointManager
+from kavach.backend.app.core.logging_manager import setup_logging
 from kavach.backend.app.core.rule_engine import RuleEngine
 from kavach.backend.app.main import app as fastapi_app
 
@@ -41,6 +42,7 @@ class KavachTUI(App):
     def __init__(self) -> None:
         super().__init__()
         self.web_ui_token = _generate_token()
+        setup_logging()  # Initialize structured logging
         self.rule_engine = RuleEngine(str(RULES_PATH))
         self.checkpoint_manager = CheckpointManager()
         self._web_server_thread: threading.Thread | None = None

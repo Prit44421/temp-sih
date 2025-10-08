@@ -7,6 +7,8 @@ from pathlib import Path
 import click
 
 from kavach.backend.app.core.checkpoint_manager import CheckpointManager
+from kavach.backend.app.core.logging_manager import setup_logging
+from kavach.backend.app.core.report_generator import ReportGenerator
 from kavach.backend.app.core.rule_engine import RuleEngine
 
 
@@ -25,6 +27,7 @@ def cli() -> None:
     """Kavach: A multi-platform system hardening tool."""
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    setup_logging()  # Initialize structured logging
 
 
 @cli.command()
@@ -101,11 +104,37 @@ def start() -> None:
 
 @cli.command()
 @click.option("--output", default="kavach-report.pdf", show_default=True, help="Output file for the report.")
-def report(output: str) -> None:
+@click.option("--summary", is_flag=True, help="Generate a summary report instead of a full report.")
+@click.option("--no-logs", is_flag=True, help="Exclude execution logs from the report.")
+@click.option(
+    "--rules-file",
+    type=click.Path(path_type=Path),
+    default=DEFAULT_RULES_PATH,
+    show_default=True,
+    help="Path to the annexure JSON file.",
+)
+def report(output: str, summary: bool, no_logs: bool, rules_file: Path) -> None:
     """Generate a compliance report."""
 
-    click.echo("Report generation not yet implemented.")
-    click.echo(f"Report would be saved to: {output}")
+    try:
+        rules_path = _ensure_rules_path(rules_file)
+        engine = RuleEngine(rules_file=str(rules_path))
+        generator = ReportGenerator()
+        
+        if summary:
+            output_path = generator.generate_summary_report(output)
+        else:
+            output_path = generator.generate_compliance_report(
+                engine.ruleset,
+                output,
+                include_logs=not no_logs
+            )
+        
+        click.echo(f"Report generated successfully: {output_path}")
+        
+    except Exception as e:
+        click.echo(f"Error generating report: {e}", err=True)
+        raise click.Abort()
 
 
 if __name__ == "__main__":

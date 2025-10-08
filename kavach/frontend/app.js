@@ -303,14 +303,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSystemInfo(info = {}) {
-        const entries = [
+        const system = (info.system || '').toLowerCase();
+
+        const base = [
             { label: 'Operating system', value: info.system || 'Unknown' },
             { label: 'Release', value: info.release || '—' },
-            { label: 'Version', value: info.version || '—' },
-            { label: 'Distribution', value: info.distro_name || info.distro_id || '—' },
-            { label: 'Distro version', value: info.distro_version || '—' }
+            { label: 'Version', value: info.version || '—' }
         ];
 
+        const extras = [];
+        if (system === 'linux') {
+            if (info.distro_name || info.distro_id) {
+                extras.push({ label: 'Distribution', value: info.distro_name || info.distro_id });
+            }
+            if (info.distro_version) {
+                extras.push({ label: 'Distro version', value: info.distro_version });
+            }
+        } else if (system === 'windows') {
+            if (info.windows_edition) {
+                extras.push({ label: 'Windows edition', value: info.windows_edition });
+            }
+            if (info.windows_version) {
+                extras.push({ label: 'Windows version', value: info.windows_version });
+            }
+        }
+
+        const entries = [...base, ...extras];
         systemInfo.innerHTML = entries
             .map((entry) => `
                 <div>
