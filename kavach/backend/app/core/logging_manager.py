@@ -181,8 +181,8 @@ class LoggingManager:
             new_state=stdout.strip()[:200] if stdout else None,
             status=status,
             cmd=cmd,
-            stdout=stdout[:500] if stdout else None,
-            stderr=stderr[:500] if stderr else None,
+            stdout=stdout if stdout else None,
+            stderr=stderr if stderr else None,
             message=f"Rule remediation for {rule_id} completed with exit code {exit_code}"
         )
     
@@ -200,8 +200,8 @@ class LoggingManager:
             new_state=actual[:200] if actual else None,
             status=status,
             cmd=cmd,
-            stdout=stdout[:500] if stdout else None,
-            stderr=stderr[:500] if stderr else None,
+            stdout=stdout if stdout else None,
+            stderr=stderr if stderr else None,
             message=f"Rule validation for {rule_id} {'passed' if validation_passed else 'failed'}"
         )
     
