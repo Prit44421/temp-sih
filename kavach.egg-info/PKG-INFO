@@ -7,9 +7,11 @@ Description-Content-Type: text/markdown
 Requires-Dist: click
 Requires-Dist: fastapi
 Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic
 Requires-Dist: distro
 Requires-Dist: cryptography
 Requires-Dist: textual
+Requires-Dist: reportlab
 
 # Kavach - System Hardening Tool
 

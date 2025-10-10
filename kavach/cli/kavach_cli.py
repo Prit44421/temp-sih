@@ -13,7 +13,7 @@ from kavach.backend.app.core.rule_engine import RuleEngine
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_RULES_PATH = PACKAGE_ROOT / "examples" / "annexure_rules.json"
+DEFAULT_RULES_PATH = PACKAGE_ROOT / "ruleModules" / "annexure_rules.json"
 
 
 def _ensure_rules_path(path: Path) -> Path:
@@ -64,7 +64,14 @@ def apply(rules_file: Path, level: str, dry_run: bool, safe_mode: bool) -> None:
 
 @cli.command()
 @click.argument("checkpoint_id")
-def rollback(checkpoint_id: str) -> None:
+@click.option(
+    "--rules-file",
+    type=click.Path(path_type=Path),
+    default=DEFAULT_RULES_PATH,
+    show_default=True,
+    help="Path to the annexure JSON file.",
+)
+def rollback(checkpoint_id: str, rules_file: Path) -> None:
     """Rollback the system to a previous checkpoint."""
 
     manager = CheckpointManager()
@@ -72,7 +79,23 @@ def rollback(checkpoint_id: str) -> None:
     if record is None:
         raise click.UsageError("Checkpoint not found or could not be decrypted.")
 
-    click.echo("Checkpoint data loaded. TODO: apply rollback operations")
+    click.echo(f"Checkpoint {checkpoint_id} found for rule: {record.rule_id}")
+    click.echo(f"Timestamp: {record.timestamp.isoformat()}")
+    
+    # Load the rule engine to execute the rollback
+    rules_path = _ensure_rules_path(rules_file)
+    engine = RuleEngine(rules_file=str(rules_path))
+    
+    click.echo("Executing rollback operation...")
+    success = engine.execute_rollback(checkpoint_id)
+    
+    if success:
+        click.echo(f"✓ Rollback completed successfully for checkpoint {checkpoint_id}")
+        click.echo("Note: Manual verification of the rollback is recommended.")
+    else:
+        click.echo(f"✗ Rollback failed for checkpoint {checkpoint_id}", err=True)
+        click.echo("Check logs for details or perform manual rollback.", err=True)
+        raise click.Abort()
 
 
 @cli.command()

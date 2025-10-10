@@ -61,7 +61,6 @@ class CheckpointManager:
 
     # ------------------------------------------------------------------
     # Public API
-    # ------------------------------------------------------------------
     def create_checkpoint(self, rule_id: str, data: Dict[str, Any]) -> str:
         """Persist a new checkpoint and return its identifier."""
 
@@ -132,7 +131,6 @@ class CheckpointManager:
 
     # ------------------------------------------------------------------
     # Internal helpers
-    # ------------------------------------------------------------------
     def _checkpoint_path(self, checkpoint_id: str) -> Path:
         return self._checkpoint_dir / f"{checkpoint_id}.kcp"
 
@@ -140,7 +138,6 @@ class CheckpointManager:
 __all__ = ["CheckpointManager", "CheckpointRecord"]
 
 if __name__ == '__main__':
-    # Example usage:
     manager = CheckpointManager()
 
     # 1. Create a checkpoint

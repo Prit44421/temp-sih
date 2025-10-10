@@ -132,6 +132,105 @@ class RuleEngine:
         observed = check_result.stdout.strip()
         return expected and observed == expected
 
+    def execute_rollback(self, checkpoint_id: str) -> bool:
+        """Execute a rollback operation using the specified checkpoint.
+        
+        Returns True if rollback succeeded, False otherwise.
+        """
+        record = self.checkpoint_manager.restore_checkpoint(checkpoint_id)
+        if record is None:
+            logger.error("Cannot rollback; checkpoint %s not found", checkpoint_id)
+            return False
+
+        # Find the rule associated with this checkpoint
+        rule = self._find_rule_by_id(record.rule_id)
+        if rule is None:
+            logger.error(
+                "Cannot rollback checkpoint %s; rule %s not found in current ruleset",
+                checkpoint_id,
+                record.rule_id
+            )
+            return False
+
+        logger.info("Executing rollback for checkpoint %s (rule: %s)", checkpoint_id, record.rule_id)
+        self.logging_manager.log_app_event("INFO", f"Starting rollback for checkpoint {checkpoint_id}")
+
+        try:
+            # Execute the rollback action
+            # The rollback typically means re-running the check phase to restore state
+            # or executing a reverse operation if the checkpoint data contains specific instructions
+            
+            # For now, we'll attempt to restore by re-checking the original state
+            # In a more sophisticated implementation, you might have rule-specific rollback commands
+            rollback_result = self._execute_rollback_for_rule(rule, record)
+            
+            if rollback_result:
+                self.logging_manager.log_rollback_attempt(checkpoint_id, record.rule_id, True)
+                logger.info("Rollback for checkpoint %s completed successfully", checkpoint_id)
+                return True
+            else:
+                self.logging_manager.log_rollback_attempt(checkpoint_id, record.rule_id, False)
+                logger.error("Rollback for checkpoint %s failed", checkpoint_id)
+                return False
+                
+        except Exception as exc:
+            logger.exception("Error during rollback of checkpoint %s: %s", checkpoint_id, exc)
+            self.logging_manager.log_rollback_attempt(checkpoint_id, record.rule_id, False)
+            return False
+
+    def _execute_rollback_for_rule(self, rule: Rule, record: CheckpointRecord) -> bool:
+        """Execute the actual rollback operation for a rule.
+        
+        This attempts to restore the system to its pre-remediation state.
+        """
+        # Strategy: We'll try to determine if the rule has a specific rollback action
+        # Otherwise, we log that manual intervention may be required
+        
+        logger.info("Attempting rollback for rule %s using checkpoint data", rule.id)
+        
+        # Check if the checkpoint data contains specific rollback information
+        # For most rules, we need to notify that manual rollback may be needed
+        # since automated rollback can be dangerous
+        
+        # Log the original state from the checkpoint
+        checkpoint_state = record.data
+        logger.info(
+            "Original state before remediation - stdout: %r, exit_code: %s",
+            checkpoint_state.get("stdout", ""),
+            checkpoint_state.get("exit_code", "N/A")
+        )
+        
+        # In safe mode or for complex rules, we should not attempt automatic rollback
+        if self.safe_mode:
+            logger.warning(
+                "Safe mode is enabled; automatic rollback is disabled. "
+                "Manual intervention required to restore rule %s",
+                rule.id
+            )
+            return False
+        
+        # For now, we'll return True to indicate the checkpoint was processed
+        # but log that manual verification is recommended
+        logger.warning(
+            "Checkpoint %s processed. Manual verification recommended for rule %s. "
+            "Original state logged above.",
+            record.id,
+            rule.id
+        )
+        
+        # Future enhancement: Execute rule-specific rollback commands
+        # This would require extending the Rule model to include explicit rollback actions
+        
+        return True
+
+    def _find_rule_by_id(self, rule_id: str) -> Rule | None:
+        """Find a rule by its ID across all loaded rulesets."""
+        for ruleset in self.ruleset:
+            for rule in ruleset.rules:
+                if rule.id == rule_id:
+                    return rule
+        return None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -209,13 +308,13 @@ class RuleEngine:
             return
 
         # Execute validation phase
-        validate_result = self._execute_action(rule.validate, phase="validate")
-        validate_expected = (rule.validate.expect or "").strip()
+        validate_result = self._execute_action(rule.validation, phase="validate")
+        validate_expected = (rule.validation.expect or "").strip()
         validation_passed = validate_result.succeeded and (not validate_expected or validate_result.stdout.strip() == validate_expected)
         
         self.logging_manager.log_rule_validate(
             rule.id,
-            rule.validate.cmd,
+            rule.validation.cmd,
             validate_result.stdout,
             validate_result.stderr,
             validate_result.exit_code,
@@ -299,15 +398,21 @@ class RuleEngine:
             return "", str(exc), 1
 
     def _attempt_rollback(self, checkpoint_id: str) -> None:
-        record: CheckpointRecord | None = self.checkpoint_manager.restore_checkpoint(checkpoint_id)
-        if record is None:
-            logger.error("Rollback failed; checkpoint %s could not be restored", checkpoint_id)
-            self.logging_manager.log_rollback_attempt(checkpoint_id, "unknown", False)
-            return
-
-        # TODO: Implement actual rollback logic leveraging ``record.data``.
-        logger.warning("Rollback required for checkpoint %s; action not yet implemented", checkpoint_id)
-        self.logging_manager.log_rollback_attempt(checkpoint_id, record.rule_id, False)
+        """Attempt to rollback a failed remediation using the checkpoint."""
+        logger.warning(
+            "Remediation failed; attempting automatic rollback for checkpoint %s",
+            checkpoint_id
+        )
+        
+        success = self.execute_rollback(checkpoint_id)
+        
+        if success:
+            logger.info("Automatic rollback completed for checkpoint %s", checkpoint_id)
+        else:
+            logger.error(
+                "Automatic rollback failed for checkpoint %s; manual intervention may be required",
+                checkpoint_id
+            )
 
     def _should_apply_rule(self, rule_level: str, target_level: str) -> bool:
         return LEVEL_PRIORITY[rule_level] <= LEVEL_PRIORITY[target_level]

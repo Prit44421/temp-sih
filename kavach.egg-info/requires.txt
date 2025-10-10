@@ -1,6 +1,8 @@
 click
 fastapi
 uvicorn[standard]
+pydantic
 distro
 cryptography
 textual
+reportlab

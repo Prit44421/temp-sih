@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Literal
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from kavach.backend.app.core.checkpoint_manager import CheckpointManager
@@ -21,7 +22,7 @@ router = APIRouter()
 
 _DEFAULT_RULES_PATH = (
     Path(__file__).resolve().parents[3]
-    / "examples"
+    / "ruleModules"
     / "annexure_rules.json"
 )
 _RULES_FILE = Path(os.getenv("KAVACH_RULES_FILE", str(_DEFAULT_RULES_PATH)))
@@ -102,11 +103,22 @@ def rollback_checkpoint(checkpoint_id: str) -> dict:
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
 
-    # TODO: Implement actual rollback logic once remediation artefacts are tracked.
-    return {
-        "message": f"Rollback to checkpoint '{checkpoint_id}' initiated.",
-        "data": record.data,
-    }
+    # Execute the rollback operation
+    success = _rule_engine.execute_rollback(checkpoint_id)
+    
+    if success:
+        return {
+            "message": f"Rollback to checkpoint '{checkpoint_id}' completed successfully.",
+            "rule_id": record.rule_id,
+            "timestamp": record.timestamp.isoformat(),
+            "status": "success",
+            "note": "Manual verification of the rollback is recommended."
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Rollback operation failed for checkpoint '{checkpoint_id}'. Check logs for details."
+        )
 
 
 @router.get("/rules", response_model=List[RuleSet])
@@ -118,11 +130,18 @@ def get_rules() -> List[RuleSet]:
 
 @router.get("/rules/status", response_model=Dict[str, bool])
 def get_rule_statuses() -> Dict[str, bool]:
-    """Return the compliance status of each rule."""
+    """Return the compliance status of each rule and log the results."""
     statuses = {}
     for ruleset in _rule_engine.ruleset:
         for rule in ruleset.rules:
-            statuses[rule.id] = _rule_engine.check_rule_compliance(rule)
+            is_compliant = _rule_engine.check_rule_compliance(rule)
+            statuses[rule.id] = is_compliant
+            # Log the compliance check result
+            _logging_manager.log_compliance_check(
+                rule.id,
+                is_compliant,
+                f"Compliance check: Rule {rule.id} is {'compliant' if is_compliant else 'not compliant'}"
+            )
     return statuses
 
 
@@ -171,31 +190,37 @@ def _serialise_rulesets(rulesets: List[RuleSet]) -> Dict[str, Dict[str, Dict[str
 
 
 @router.post("/reports/generate")
-def generate_report(include_logs: bool = True) -> dict:
-    """Generate a comprehensive compliance report."""
+def generate_report(include_logs: bool = True) -> FileResponse:
+    """Generate a comprehensive compliance report and return the PDF file."""
     try:
         output_path = _report_generator.generate_compliance_report(
             _rule_engine.ruleset,
             include_logs=include_logs
         )
-        return {
-            "message": "Report generated successfully",
-            "report_path": str(output_path),
-            "filename": output_path.name
-        }
+        return FileResponse(
+            path=str(output_path),
+            media_type="application/pdf",
+            filename=output_path.name,
+            headers={
+                "Content-Disposition": f"attachment; filename={output_path.name}"
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
 
 
 @router.post("/reports/summary")
-def generate_summary_report() -> dict:
-    """Generate a quick summary report."""
+def generate_summary_report() -> FileResponse:
+    """Generate a quick summary report and return the PDF file."""
     try:
         output_path = _report_generator.generate_summary_report()
-        return {
-            "message": "Summary report generated successfully",
-            "report_path": str(output_path),
-            "filename": output_path.name
-        }
+        return FileResponse(
+            path=str(output_path),
+            media_type="application/pdf",
+            filename=output_path.name,
+            headers={
+                "Content-Disposition": f"attachment; filename={output_path.name}"
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate summary report: {str(e)}")

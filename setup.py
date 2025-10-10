@@ -9,9 +9,11 @@ setup(
         'click',
         'fastapi',
         'uvicorn[standard]',
+        'pydantic',
         'distro',
         'cryptography',
         'textual',
+        'reportlab',
     ],
     entry_points={
         'console_scripts': [

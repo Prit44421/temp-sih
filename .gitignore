@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+ROLLBACK_IMPLEMENTATION.md
+PDF_REPORT_FIX.md
+COMPLIANCE_LOGGING.md
+rules/

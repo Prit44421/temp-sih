@@ -11,9 +11,6 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
-    BaseDocTemplate,
-    Frame,
-    PageTemplate,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -154,9 +151,21 @@ class ReportGenerator:
         
         # Get rule execution logs for statistics
         session_logs = self.logging_manager.get_session_logs()
+        
+        # Count compliance checks (most recent status for each rule)
+        rule_compliance_status = {}
+        for log in session_logs:
+            if log.get('action') == 'compliance_check':
+                rule_id = log.get('rule_id')
+                status = log.get('status')
+                if rule_id and status:
+                    rule_compliance_status[rule_id] = status
+        
+        compliant_rules = len([s for s in rule_compliance_status.values() if s == 'compliant'])
+        
+        # Count successfully applied rules
         completed_rules = len([log for log in session_logs if log.get('action') == 'complete' and log.get('status') == 'success'])
         failed_rules = len([log for log in session_logs if log.get('status') == 'failure'])
-        compliant_rules = len([log for log in session_logs if log.get('status') == 'compliant'])
         
         # Summary statistics table
         summary_data = [
@@ -264,16 +273,30 @@ class ReportGenerator:
         session_logs = self.logging_manager.get_session_logs()
         rule_status_map = {}
         
+        # Process logs to get most recent status for each rule
         for log in session_logs:
             rule_id = log.get('rule_id')
-            if rule_id:
-                if log.get('status') == 'compliant':
+            if not rule_id:
+                continue
+            
+            action = log.get('action')
+            status = log.get('status')
+            
+            # Priority: compliance_check > complete > failure > others
+            if action == 'compliance_check':
+                if status == 'compliant':
                     rule_status_map[rule_id] = ('Compliant', colors.green)
-                elif log.get('action') == 'complete' and log.get('status') == 'success':
+                elif status == 'non_compliant':
+                    rule_status_map[rule_id] = ('Not Compliant', colors.orange)
+            elif action == 'complete' and status == 'success':
+                # Only set if not already marked as compliant
+                if rule_id not in rule_status_map or rule_status_map[rule_id][0] not in ['Compliant', 'Not Compliant']:
                     rule_status_map[rule_id] = ('Applied', colors.blue)
-                elif log.get('status') == 'failure':
+            elif status == 'failure':
+                if rule_id not in rule_status_map:
                     rule_status_map[rule_id] = ('Failed', colors.red)
-                elif log.get('status') == 'skipped':
+            elif status == 'skipped':
+                if rule_id not in rule_status_map:
                     rule_status_map[rule_id] = ('Skipped', colors.orange)
         
         # Group rules by module
@@ -284,7 +307,7 @@ class ReportGenerator:
             rule_data = [['Rule ID', 'Title', 'Level', 'Status']]
             
             for rule in ruleset_item.rules:
-                status_text, status_color = rule_status_map.get(rule.id, ('Not Evaluated', colors.gray))
+                status_text = rule_status_map.get(rule.id, ('Not Evaluated', colors.gray))[0]
                 
                 rule_data.append([
                     rule.id,

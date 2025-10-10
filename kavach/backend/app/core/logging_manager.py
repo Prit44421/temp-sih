@@ -216,6 +216,17 @@ class LoggingManager:
             message=f"Rollback to checkpoint {checkpoint_id} for rule {rule_id} {'succeeded' if success else 'failed'}"
         )
     
+    def log_compliance_check(self, rule_id: str, is_compliant: bool, message: str = "") -> None:
+        """Log compliance check result."""
+        status = "compliant" if is_compliant else "non_compliant"
+        self.log_rule_event(
+            level="INFO",
+            rule_id=rule_id,
+            action="compliance_check",
+            status=status,
+            message=message or f"Rule {rule_id} is {'compliant' if is_compliant else 'not compliant'}"
+        )
+    
     def get_session_logs(self) -> list[Dict[str, Any]]:
         """Retrieve all logs for the current session."""
         logs = []

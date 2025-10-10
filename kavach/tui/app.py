@@ -21,7 +21,7 @@ from kavach.backend.app.main import app as fastapi_app
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-RULES_PATH = ROOT_DIR / "examples" / "annexure_rules.json"
+RULES_PATH = ROOT_DIR / "ruleModules" / "annexure_rules.json"
 CSS_PATH = Path(__file__).with_name("app.css")
 
 
@@ -108,7 +108,7 @@ class KavachTUI(App):
         elif button_id == "rollback":
             await self._handle_rollback()
         elif button_id == "report":
-            self.query_one("#status_message", Static).update("Report generation not yet implemented")
+            await self._handle_report()
 
     async def _handle_apply(self, level: str) -> None:
         self.query_one("#status_message", Static).update(f"Applying {level} rules...")
@@ -133,8 +133,44 @@ class KavachTUI(App):
             return
 
         self.query_one("#status_message", Static).update(
-            f"Loaded checkpoint {record.id}. Manual rollback required."
+            f"Executing rollback for checkpoint {record.id}..."
         )
+        
+        # Execute the rollback
+        success = self.rule_engine.execute_rollback(latest)
+        
+        if success:
+            self.query_one("#status_message", Static).update(
+                f"✓ Rollback completed for checkpoint {record.id}. Manual verification recommended."
+            )
+            # Update rule status
+            self._rule_status[record.rule_id] = "Rolled back"
+            self._refresh_rule_table()
+        else:
+            self.query_one("#status_message", Static).update(
+                f"✗ Rollback failed for checkpoint {record.id}. Check logs for details."
+            )
+
+    async def _handle_report(self) -> None:
+        """Generate a compliance report using the report generator."""
+        self.query_one("#status_message", Static).update("Generating compliance report...")
+        
+        try:
+            from kavach.backend.app.core.report_generator import ReportGenerator
+            
+            generator = ReportGenerator()
+            output_path = generator.generate_compliance_report(
+                self.rule_engine.ruleset,
+                include_logs=True
+            )
+            
+            self.query_one("#status_message", Static).update(
+                f"✓ Report generated successfully: {output_path}"
+            )
+        except Exception as e:
+            self.query_one("#status_message", Static).update(
+                f"✗ Report generation failed: {str(e)}"
+            )
 
 
 if __name__ == "__main__":

@@ -116,7 +116,9 @@ document.addEventListener('DOMContentLoaded', () => {
     feedbackButton?.addEventListener('click', () => openModal('feedback-modal'));
 
     startHardeningButton?.addEventListener('click', () => {
-        displayToast('Hardening jobs can be launched from the CLI or upcoming backend workflows.');
+        // Navigate to hardening section where the user can select level and launch
+        selectSection('hardening');
+        displayToast('Select a hardening level and click "Launch Hardening" to begin.');
     });
 
     viewReportsButton?.addEventListener('click', () => selectSection('reports'));
@@ -144,14 +146,19 @@ document.addEventListener('DOMContentLoaded', () => {
             a.href = url;
             // Name the file
             const date = new Date().toISOString().split('T')[0];
-            a.download = `Kavach-Compliance-Report-${date}.pdf`;
+            const filename = `Kavach-Compliance-Report-${date}.pdf`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
             
+            // Store report info in localStorage
+            localStorage.setItem('kavach_last_report', filename);
+            localStorage.setItem('kavach_last_report_time', new Date().toISOString());
+            
             statusEl.innerHTML = 'Report generated and download started.';
             displayToast('Report downloaded successfully.', 'success');
-            hydrateReports(); // Refresh the list of reports (if applicable)
+            hydrateReports(); // Refresh the list
         })
         .catch(err => {
             console.error('Report generation failed', err);
@@ -294,25 +301,114 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     previewChangesButton?.addEventListener('click', () => {
-        displayToast('Change preview will show affected rules and system modifications.');
+        const selectedLevel = document.querySelector('.level-button.selected');
+        const level = selectedLevel?.getAttribute('data-level') || 'moderate';
+        
+        displayToast(`Loading preview for ${level} level...`, 'info');
+        
+        // Fetch rules and filter by level to show what will be affected
+        apiFetch('/api/rules')
+            .then(response => response.json())
+            .then(rulesets => {
+                let affectedRules = [];
+                const levelPriority = { 'basic': 0, 'moderate': 1, 'strict': 2 };
+                const targetPriority = levelPriority[level];
+                
+                rulesets.forEach(ruleset => {
+                    ruleset.rules.forEach(rule => {
+                        if (levelPriority[rule.level] <= targetPriority) {
+                            affectedRules.push({
+                                id: rule.id,
+                                title: rule.title,
+                                level: rule.level,
+                                description: rule.description
+                            });
+                        }
+                    });
+                });
+                
+                // Create preview modal content
+                const previewContent = `
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <p><strong>${affectedRules.length} rules</strong> will be evaluated and applied at <strong>${level}</strong> level:</p>
+                        <ul style="list-style: none; padding: 0;">
+                            ${affectedRules.map(rule => `
+                                <li style="padding: 8px; margin: 4px 0; background: var(--surface-muted); border-radius: 4px;">
+                                    <strong>${rule.id}</strong> (${rule.level})<br>
+                                    <small>${rule.title}</small>
+                                </li>
+                            `).join('')}
+                        </ul>
+                        <p style="margin-top: 16px; color: var(--text-muted);">
+                            <strong>Note:</strong> Checkpoints will be created before applying changes. You can rollback if needed.
+                        </p>
+                    </div>
+                `;
+                
+                // Show in a simple alert (you can enhance this with a proper modal later)
+                const previewDiv = document.createElement('div');
+                previewDiv.innerHTML = previewContent;
+                previewDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); padding: 24px; border-radius: 16px; box-shadow: var(--shadow-lg); z-index: 1001; max-width: 600px; width: 90%;';
+                
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = 'position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 1000;';
+                backdrop.onclick = () => {
+                    document.body.removeChild(previewDiv);
+                    document.body.removeChild(backdrop);
+                };
+                
+                const closeBtn = document.createElement('button');
+                closeBtn.textContent = 'Close';
+                closeBtn.className = 'primary';
+                closeBtn.style.marginTop = '16px';
+                closeBtn.onclick = backdrop.onclick;
+                previewDiv.appendChild(closeBtn);
+                
+                document.body.appendChild(backdrop);
+                document.body.appendChild(previewDiv);
+            })
+            .catch(err => {
+                console.error('Failed to load preview', err);
+                displayToast('Failed to load change preview.', 'error');
+            });
     });
 
     // Rollback section button handlers
     rollbackLatestButton?.addEventListener('click', () => {
         const statusEl = document.getElementById('rollback-status');
-        statusEl.innerHTML = 'Initiating rollback to latest checkpoint...';
+        statusEl.innerHTML = 'Fetching latest checkpoint...';
         
-        apiFetch('/api/rollback/latest', { method: 'POST' })
+        // First, get the list of checkpoints to find the latest one
+        apiFetch('/api/checkpoints')
             .then(res => res.ok ? res.json() : Promise.reject(res))
+            .then(checkpoints => {
+                if (!checkpoints || checkpoints.length === 0) {
+                    statusEl.innerHTML = 'No checkpoints available for rollback.';
+                    displayToast('No checkpoints found.', 'error');
+                    return;
+                }
+                
+                // Get the latest checkpoint (last in the array)
+                const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                statusEl.innerHTML = `Initiating rollback to latest checkpoint (${latestCheckpoint.id})...`;
+                
+                // Now rollback using the checkpoint ID
+                return apiFetch(`/api/rollback/${latestCheckpoint.id}`, { method: 'POST' });
+            })
+            .then(res => {
+                if (!res) return; // No checkpoint case
+                return res.ok ? res.json() : Promise.reject(res);
+            })
             .then(data => {
+                if (!data) return; // No checkpoint case
                 statusEl.innerHTML = data?.message || 'Rollback to latest checkpoint completed.';
-                displayToast('Rollback to latest checkpoint successful.');
+                displayToast('Rollback to latest checkpoint successful.', 'success');
                 loadCheckpoints(); // Refresh the list
             })
             .catch(err => {
                 console.error('Rollback failed', err);
                 statusEl.innerHTML = 'Rollback failed.';
-                displayToast('Rollback to latest checkpoint failed.', true);
+                displayToast('Rollback to latest checkpoint failed.', 'error');
             });
     });
 
@@ -322,7 +418,68 @@ document.addEventListener('DOMContentLoaded', () => {
     // });
 
     previewRollbackButton?.addEventListener('click', () => {
-        displayToast('Rollback preview will show what changes will be reverted.');
+        displayToast('Loading rollback preview...', 'info');
+        
+        // Fetch checkpoints and show details
+        apiFetch('/api/checkpoints')
+            .then(response => response.json())
+            .then(checkpoints => {
+                if (!checkpoints || checkpoints.length === 0) {
+                    displayToast('No checkpoints available to preview.', 'error');
+                    return;
+                }
+                
+                // Create preview modal content
+                const previewContent = `
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <p><strong>${checkpoints.length} checkpoint(s)</strong> available for rollback:</p>
+                        <ul style="list-style: none; padding: 0;">
+                            ${checkpoints.map((cp, idx) => `
+                                <li style="padding: 12px; margin: 8px 0; background: var(--surface-muted); border-radius: 8px; ${idx === checkpoints.length - 1 ? 'border: 2px solid var(--primary);' : ''}">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong>${cp.id}</strong>
+                                            ${idx === checkpoints.length - 1 ? '<span style="color: var(--primary); margin-left: 8px;">(Latest)</span>' : ''}
+                                            <br>
+                                            <small>Rule: ${cp.rule_id}</small><br>
+                                            <small>Time: ${cp.timestamp || 'N/A'}</small>
+                                        </div>
+                                    </div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                        <p style="margin-top: 16px; color: var(--text-muted);">
+                            <strong>Note:</strong> Rolling back will restore system state to when the checkpoint was created. Manual verification is recommended after rollback.
+                        </p>
+                    </div>
+                `;
+                
+                // Show in a preview modal
+                const previewDiv = document.createElement('div');
+                previewDiv.innerHTML = previewContent;
+                previewDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); padding: 24px; border-radius: 16px; box-shadow: var(--shadow-lg); z-index: 1001; max-width: 600px; width: 90%;';
+                
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = 'position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 1000;';
+                backdrop.onclick = () => {
+                    document.body.removeChild(previewDiv);
+                    document.body.removeChild(backdrop);
+                };
+                
+                const closeBtn = document.createElement('button');
+                closeBtn.textContent = 'Close';
+                closeBtn.className = 'primary';
+                closeBtn.style.marginTop = '16px';
+                closeBtn.onclick = backdrop.onclick;
+                previewDiv.appendChild(closeBtn);
+                
+                document.body.appendChild(backdrop);
+                document.body.appendChild(previewDiv);
+            })
+            .catch(err => {
+                console.error('Failed to load rollback preview', err);
+                displayToast('Failed to load rollback preview.', 'error');
+            });
     });
 
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
@@ -414,11 +571,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function hydrateReports() {
-        reportsList.innerHTML = `
-            <div class="placeholder">
-                Reports will appear here once generated. Use the CLI or future backend workflows to export compliance PDFs.
-            </div>
-        `;
+        const reportsListEl = document.getElementById('reports-list');
+        if (!reportsListEl) return;
+        
+        // Show loading state
+        reportsListEl.innerHTML = '<div class="placeholder">Loading reports...</div>';
+        
+        // Get the report output directory from backend
+        // Since the backend doesn't expose a list endpoint, we'll show instructions
+        // and the last generated report info from localStorage if available
+        
+        const lastReport = localStorage.getItem('kavach_last_report');
+        const lastReportTime = localStorage.getItem('kavach_last_report_time');
+        
+        if (lastReport && lastReportTime) {
+            const reportDate = new Date(lastReportTime);
+            reportsListEl.innerHTML = `
+                <div class="card" style="margin-bottom: 12px;">
+                    <h3>Recent Report</h3>
+                    <p><strong>Last Generated:</strong> ${reportDate.toLocaleString()}</p>
+                    <p><strong>Filename:</strong> ${lastReport}</p>
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">
+                        Reports are saved to <code>~/.kavach/reports/</code> directory.
+                    </p>
+                </div>
+                <div class="placeholder" style="margin-top: 16px;">
+                    Click "Generate PDF" to create a new compliance report. The report will be downloaded automatically.
+                </div>
+            `;
+        } else {
+            reportsListEl.innerHTML = `
+                <div class="placeholder">
+                    No reports generated yet. Click "Generate PDF" to create your first compliance report.
+                    Reports are saved to <code>~/.kavach/reports/</code> and will be downloaded automatically.
+                </div>
+            `;
+        }
     }
 
     function updateSummaryPlaceholders() {

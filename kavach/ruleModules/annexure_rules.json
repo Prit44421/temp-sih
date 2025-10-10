@@ -1,0 +1,2420 @@
+{
+  "windows": {
+    "modules": {
+      "account_policies": {
+        "rules": [
+          {
+            "id": "windows.account.password_policy",
+            "title": "Enforce password policy baselines",
+            "description": "Align Windows password history, age, length, and complexity requirements with Annexure A recommendations.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).MinPasswordLength",
+              "expect": "12"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ADDefaultDomainPasswordPolicy -MinPasswordLength 12 -PasswordHistoryCount 24 -MaxPasswordAge 90.00:00:00 -MinPasswordAge 1.00:00:00 -ComplexityEnabled $true -ReversibleEncryptionEnabled $false"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).MinPasswordLength",
+              "expect": "12"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "windows.account.lockout_policy",
+            "title": "Strengthen account lockout settings",
+            "description": "Apply account lockout duration, threshold, and administrator lockout protections per Annexure A.",
+            "level": "strict",
+            "platforms": ["windows"],
+            "check": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).LockoutThreshold",
+              "expect": "5"
+            },
+            "remediate": {
+              "type": "powershell",
+              "cmd": "Set-ADDefaultDomainPasswordPolicy -LockoutThreshold 5 -LockoutDuration 00:15:00 -LockoutObservationWindow 00:15:00"
+            },
+            "validate": {
+              "type": "powershell",
+              "cmd": "(Get-ADDefaultDomainPasswordPolicy).LockoutThreshold",
+              "expect": "5"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "linux": {
+    "modules": {
+      "filesystem": {
+        "rules": [
+          {
+            "id": "linux.filesystem.kernel_modules",
+            "title": "Configure Filesystem Kernel Modules",
+            "description": "Ensure unnecessary filesystem kernel modules are disabled as per Annexure B hardening baseline.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "for module in cramfs freevxfs jffs2 hfs hfsplus overlayfs squashfs udf vfat usb-storage; do modprobe -n -v $module | grep -E 'install /bin/(true|false)' || echo \"$module not disabled\"; done",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "for module in cramfs freevxfs jffs2 hfs hfsplus overlayfs squashfs udf vfat usb-storage; do echo \"install $module /bin/true\" >> /etc/modprobe.d/filesystem-hardening.conf; done"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "for module in cramfs freevxfs jffs2 hfs hfsplus overlayfs squashfs udf vfat usb-storage; do modprobe -n -v $module | grep -E 'install /bin/(true|false)' || echo \"$module not disabled\"; done",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_tmp_partition",
+            "title": "Configure /tmp partition",
+            "description": "Ensure /tmp is a separate partition and mounted with nodev, nosuid and noexec options (creates a tmpfs entry if none exists).",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /tmp >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /tmp 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /tmp exists\nmkdir -p /tmp\n# If /tmp is not a separate mount, add a tmpfs entry to /etc/fstab and mount it\nif ! findmnt -n /tmp >/dev/null 2>&1; then\n  # Backup fstab before modifying\n  cp -p /etc/fstab /etc/fstab.bak || true\n  # Add tmpfs entry with required options\n  echo \"tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec,mode=1777 0 0\" >> /etc/fstab\n  mount -a || true\nfi\n# Ensure required mount options are present; remount with them if necessary\nopts=$(findmnt -n -o OPTIONS /tmp 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  # remount /tmp with correct options\n  mount -o remount,nodev,nosuid,noexec /tmp || true\n  # ensure /etc/fstab contains the options (attempt conservative edit)\n  sed -i.bak -E \"s@(tmpfs\\s+/tmp\\s+tmpfs\\s+)[^\\n]*@\\1defaults,nodev,nosuid,noexec,mode=1777 0 0@\" /etc/fstab || true\nfi\n# enforce safe permissions\nchmod 1777 /tmp || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /tmp >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /tmp 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_dev_shm_partition",
+            "title": "Configure /dev/shm partition",
+            "description": "Ensure /dev/shm is a separate partition and mounted with nodev, nosuid, and noexec options (creates tmpfs entry if not present).",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /dev/shm >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /dev/shm 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /dev/shm exists\nmkdir -p /dev/shm\n# If /dev/shm is not a separate mount, create tmpfs entry\nif ! findmnt -n /dev/shm >/dev/null 2>&1; then\n  cp -p /etc/fstab /etc/fstab.bak || true\n  echo \"tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec,mode=1777 0 0\" >> /etc/fstab\n  mount -a || true\nfi\n# Verify and enforce mount options\nopts=$(findmnt -n -o OPTIONS /dev/shm 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid,noexec /dev/shm || true\n  sed -i.bak -E \"s@(tmpfs\\s+/dev/shm\\s+tmpfs\\s+)[^\\n]*@\\1defaults,nodev,nosuid,noexec,mode=1777 0 0@\" /etc/fstab || true\nfi\nchmod 1777 /dev/shm || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /dev/shm >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /dev/shm 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_home_partition",
+            "title": "Configure /home partition",
+            "description": "Ensure /home is a separate partition and mounted with nodev and nosuid options for security.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /home >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /home 2>/dev/null || echo \"\"); for o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /home exists\nmkdir -p /home\n# Check if /home is a separate partition\nif ! findmnt -n /home >/dev/null 2>&1; then\n  echo 'Warning: /home is not a separate partition. Manual configuration is required.'\n  exit 0\nfi\n# Add nodev,nosuid if missing\nopts=$(findmnt -n -o OPTIONS /home 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid /home || true\n  # Update /etc/fstab to persist the configuration\n  cp -p /etc/fstab /etc/fstab.bak || true\n  sed -i.bak -E \"s@(/home\\s+[^\\s]+\\s+[^\\s]+\\s+)[^\\n]*@\\1defaults,nodev,nosuid 0 2@\" /etc/fstab || true\nfi\nchmod 755 /home || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /home >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /home 2>/dev/null || echo \"\"); for o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_var_partition",
+            "title": "Configure /var partition",
+            "description": "Ensure /var is a separate partition and mounted with nodev and nosuid options to enhance security and integrity of system logs and variable data.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var 2>/dev/null || echo \"\"); for o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /var directory exists\nmkdir -p /var\n# Check if /var is mounted separately\nif ! findmnt -n /var >/dev/null 2>&1; then\n  echo 'Warning: /var is not a separate partition. Manual configuration required.'\n  exit 0\nfi\n# Add nodev,nosuid if missing\nopts=$(findmnt -n -o OPTIONS /var 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid /var || true\n  # Update fstab for persistence\n  cp -p /etc/fstab /etc/fstab.bak || true\n  sed -i.bak -E \"s@(/var\\s+[^\\s]+\\s+[^\\s]+\\s+)[^\\n]*@\\1defaults,nodev,nosuid 0 2@\" /etc/fstab || true\nfi\nchmod 755 /var || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var 2>/dev/null || echo \"\"); for o in nodev nosuid; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_var_tmp_partition",
+            "title": "Configure /var/tmp partition",
+            "description": "Ensure /var/tmp is mounted on a separate partition with nodev, nosuid, and noexec options for enhanced security and system integrity.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/tmp >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/tmp 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /var/tmp directory exists\nmkdir -p /var/tmp\n# Check if /var/tmp is mounted separately\nif ! findmnt -n /var/tmp >/dev/null 2>&1; then\n  echo 'Warning: /var/tmp is not a separate partition. Manual configuration required.'\n  exit 0\nfi\n# Get current mount options\nopts=$(findmnt -n -o OPTIONS /var/tmp 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid,noexec /var/tmp || true\n  # Update fstab for persistence\n  cp -p /etc/fstab /etc/fstab.bak || true\n  sed -i.bak -E \"s@(/var/tmp\\s+[^\\s]+\\s+[^\\s]+\\s+)[^\\n]*@\\1defaults,nodev,nosuid,noexec 0 2@\" /etc/fstab || true\nfi\nchmod 1777 /var/tmp || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/tmp >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/tmp 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_var_log_partition",
+            "title": "Configure /var/log partition",
+            "description": "Ensure /var/log is mounted on a separate partition with nodev, nosuid, and noexec options, and verify proper configuration for /var/log/audit to ensure secure logging.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/log >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/log 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ ! -d /var/log/audit ]; then missing=\"${missing}audit_dir_missing \"; fi; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /var/log directory exists\nmkdir -p /var/log\n# Check if /var/log is mounted separately\nif ! findmnt -n /var/log >/dev/null 2>&1; then\n  echo 'Warning: /var/log is not a separate partition. Manual configuration required.'\n  exit 0\nfi\n# Ensure proper mount options\nopts=$(findmnt -n -o OPTIONS /var/log 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid,noexec /var/log || true\n  # Update fstab persistently\n  cp -p /etc/fstab /etc/fstab.bak || true\n  sed -i.bak -E \"s@(/var/log\\s+[^\\s]+\\s+[^\\s]+\\s+)[^\\n]*@\\1defaults,nodev,nosuid,noexec 0 2@\" /etc/fstab || true\nfi\n# Ensure /var/log/audit exists with correct permissions\nmkdir -p /var/log/audit\nchmod 700 /var/log/audit\nchown root:root /var/log/audit\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/log >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/log 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ ! -d /var/log/audit ]; then missing=\"${missing}audit_dir_missing \"; fi; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.filesystem.configure_var_log_audit_partition",
+            "title": "Configure /var/log/audit partition",
+            "description": "Ensure /var/log/audit is mounted on a separate partition with nodev, nosuid, and noexec options for enhanced audit log security.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/log/audit >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/log/audit 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure /var/log/audit directory exists\nmkdir -p /var/log/audit\n# Check if /var/log/audit is mounted separately\nif ! findmnt -n /var/log/audit >/dev/null 2>&1; then\n  echo 'Warning: /var/log/audit is not a separate partition. Manual configuration required.'\n  exit 0\nfi\n# Ensure mount options\nopts=$(findmnt -n -o OPTIONS /var/log/audit 2>/dev/null || echo \"\")\nneed=\"\"\nfor o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || need=\"$need,$o\"; done\nif [ -n \"$need\" ]; then\n  mount -o remount,nodev,nosuid,noexec /var/log/audit || true\n  # Update fstab persistently\n  cp -p /etc/fstab /etc/fstab.bak || true\n  sed -i.bak -E \"s@(/var/log/audit\\s+[^\\s]+\\s+[^\\s]+\\s+)[^\\n]*@\\1defaults,nodev,nosuid,noexec 0 2@\" /etc/fstab || true\nfi\n# Secure permissions\nchmod 700 /var/log/audit\nchown root:root /var/log/audit\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; if ! findmnt -n /var/log/audit >/dev/null 2>&1; then missing=\"${missing}not_separate \"; fi; opts=$(findmnt -n -o OPTIONS /var/log/audit 2>/dev/null || echo \"\"); for o in nodev nosuid noexec; do echo \"$opts\" | grep -qw \"$o\" || missing=\"${missing}${o}_missing \"; done; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "bootloader": {
+        "rules": [
+          {
+            "id": "linux.bootloader.password_protection",
+            "title": "Configure Bootloader Security",
+            "description": "Ensure bootloader password is set and access to bootloader configuration is restricted to prevent unauthorized modifications.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; grub_cfg=$(find /boot -name grub.cfg 2>/dev/null | head -n 1); grub_user_cfg=$(find /boot -name user.cfg 2>/dev/null | head -n 1); if [ -z \"$grub_cfg\" ]; then echo 'grub_config_missing'; exit 0; fi; grep -q '^password_pbkdf2' \"$grub_cfg\" || grep -q '^password_pbkdf2' \"$grub_user_cfg\" || missing=\"${missing}password_not_set \"; perms=$(stat -c '%a' \"$grub_cfg\" 2>/dev/null); if [ \"$perms\" != \"600\" ] && [ \"$perms\" != \"400\" ]; then missing=\"${missing}permissions_incorrect \"; fi; owner=$(stat -c '%U' \"$grub_cfg\" 2>/dev/null); if [ \"$owner\" != \"root\" ]; then missing=\"${missing}owner_not_root \"; fi; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Identify GRUB configuration files\ngrub_cfg=$(find /boot -name grub.cfg 2>/dev/null | head -n 1)\ngrub_user_cfg=$(find /boot -name user.cfg 2>/dev/null | head -n 1)\n# Ensure grub configuration files exist\nif [ -z \"$grub_cfg\" ]; then echo 'Error: GRUB configuration not found'; exit 1; fi\n# Set GRUB password if not already configured\nif ! grep -q '^password_pbkdf2' \"$grub_cfg\" && ! grep -q '^password_pbkdf2' \"$grub_user_cfg\"; then\n  echo 'Setting GRUB bootloader password...'\n  read -r -s -p 'Enter new GRUB password: ' grubpass; echo\n  grub_pbkdf2=$(echo -e \"$grubpass\" | grub-mkpasswd-pbkdf2 | awk '/PBKDF2 hash/{print $NF}')\n  mkdir -p /boot/grub /boot/grub2 2>/dev/null || true\n  echo \"set superusers='root'\" > /boot/grub/user.cfg\n  echo \"password_pbkdf2 root $grub_pbkdf2\" >> /boot/grub/user.cfg\n  chmod 600 /boot/grub/user.cfg\nfi\n# Restrict access to GRUB config files\nchmod 600 \"$grub_cfg\"\nchown root:root \"$grub_cfg\"\n[ -f \"$grub_user_cfg\" ] && chmod 600 \"$grub_user_cfg\" && chown root:root \"$grub_user_cfg\"\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; grub_cfg=$(find /boot -name grub.cfg 2>/dev/null | head -n 1); grub_user_cfg=$(find /boot -name user.cfg 2>/dev/null | head -n 1); if [ -z \"$grub_cfg\" ]; then echo 'grub_config_missing'; exit 0; fi; grep -q '^password_pbkdf2' \"$grub_cfg\" || grep -q '^password_pbkdf2' \"$grub_user_cfg\" || missing=\"${missing}password_not_set \"; perms=$(stat -c '%a' \"$grub_cfg\" 2>/dev/null); if [ \"$perms\" != \"600\" ] && [ \"$perms\" != \"400\" ]; then missing=\"${missing}permissions_incorrect \"; fi; owner=$(stat -c '%U' \"$grub_cfg\" 2>/dev/null); if [ \"$owner\" != \"root\" ]; then missing=\"${missing}owner_not_root \"; fi; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.process_hardening.additional",
+            "title": "Configure Additional Process Hardening",
+            "description": "Ensure system process hardening measures including ASLR, ptrace restrictions, core dump restrictions, absence of prelink, and disabling automatic error reporting are in place.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; aslr=$(cat /proc/sys/kernel/randomize_va_space 2>/dev/null); [ \"$aslr\" = \"2\" ] || missing=\"${missing}aslr_disabled \"; ptrace=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 1); [ \"$ptrace\" = \"1\" ] || missing=\"${missing}ptrace_scope_incorrect \"; core_pattern=$(ulimit -c); [ \"$core_pattern\" = \"0\" ] || missing=\"${missing}core_dumps_enabled \"; dpkg -l prelink >/dev/null 2>&1 && missing=\"${missing}prelink_installed \"; systemctl is-enabled apport >/dev/null 2>&1 && missing=\"${missing}apport_enabled \"; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Enable ASLR\necho 2 > /proc/sys/kernel/randomize_va_space\n# Restrict ptrace\necho 1 > /proc/sys/kernel/yama/ptrace_scope\n# Restrict core dumps\nulimit -c 0\n# Disable prelink if installed\nif command -v prelink >/dev/null 2>&1; then apt-get remove -y prelink || yum remove -y prelink || true; fi\n# Disable Automatic Error Reporting (Apport)\nsystemctl disable apport 2>/dev/null || true\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; aslr=$(cat /proc/sys/kernel/randomize_va_space 2>/dev/null); [ \"$aslr\" = \"2\" ] || missing=\"${missing}aslr_disabled \"; ptrace=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 1); [ \"$ptrace\" = \"1\" ] || missing=\"${missing}ptrace_scope_incorrect \"; core_pattern=$(ulimit -c); [ \"$core_pattern\" = \"0\" ] || missing=\"${missing}core_dumps_enabled \"; dpkg -l prelink >/dev/null 2>&1 && missing=\"${missing}prelink_installed \"; systemctl is-enabled apport >/dev/null 2>&1 && missing=\"${missing}apport_enabled \"; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.banners.configure_login_banners",
+            "title": "Configure Command Line Warning Banners",
+            "description": "Ensure local and remote login warning banners are properly configured and access permissions to /etc/motd, /etc/issue, and /etc/issue.net are secured.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "missing=\"\"; for f in /etc/motd /etc/issue /etc/issue.net; do [ -f \"$f\" ] || missing=\"${missing}${f}_missing \"; perms=$(stat -c '%a' \"$f\" 2>/dev/null); [ \"$perms\" -le 644 ] || missing=\"${missing}${f}_permissions_incorrect \"; done; grep -q -E 'WARNING|AUTHORIZED' /etc/issue /etc/issue.net /etc/motd 2>/dev/null || missing=\"${missing}banners_not_configured \"; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "set -e\n# Ensure banner files exist\nfor f in /etc/motd /etc/issue /etc/issue.net; do touch $f; chmod 644 $f; chown root:root $f; done\n# Add example warning banner if missing\ngrep -q -E 'WARNING|AUTHORIZED' /etc/motd /etc/issue /etc/issue.net 2>/dev/null || for f in /etc/motd /etc/issue /etc/issue.net; do echo 'WARNING: Unauthorized access is prohibited.' > $f; done\nexit 0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "missing=\"\"; for f in /etc/motd /etc/issue /etc/issue.net; do [ -f \"$f\" ] || missing=\"${missing}${f}_missing \"; perms=$(stat -c '%a' \"$f\" 2>/dev/null); [ \"$perms\" -le 644 ] || missing=\"${missing}${f}_permissions_incorrect \"; done; grep -q -E 'WARNING|AUTHORIZED' /etc/issue /etc/issue.net /etc/motd 2>/dev/null || missing=\"${missing}banners_not_configured \"; if [ -z \"$missing\" ]; then echo \"ok\"; else echo \"$missing\"; fi",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "services": {
+        "rules": [
+          {
+            "id": "linux.service.autofs",
+            "title": "Ensure autofs service is not in use",
+            "description": "Disable the autofs automounter to reduce attack surface.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled autofs || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now autofs" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled autofs || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.avahi",
+            "title": "Ensure avahi daemon service is not in use",
+            "description": "Disable avahi-daemon for link-local network discovery unless justified.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled avahi-daemon || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now avahi-daemon" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled avahi-daemon || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.dhcp",
+            "title": "Ensure DHCP server service is not in use",
+            "description": "Disable DHCP server unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled isc-dhcp-server || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now isc-dhcp-server" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled isc-dhcp-server || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.dns",
+            "title": "Ensure DNS server service is not in use",
+            "description": "Disable DNS (named/BIND) server unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled named || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now named" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled named || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.dnsmasq",
+            "title": "Ensure dnsmasq services are not in use",
+            "description": "Disable dnsmasq unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled dnsmasq || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now dnsmasq" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled dnsmasq || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.ftp",
+            "title": "Ensure FTP server service is not in use",
+            "description": "Disable FTP (vsftpd) server unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled vsftpd || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now vsftpd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled vsftpd || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.ldap",
+            "title": "Ensure LDAP server service is not in use",
+            "description": "Disable LDAP (slapd) server if not required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled slapd || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now slapd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled slapd || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.imap-pop3",
+            "title": "Ensure message access server services are not in use",
+            "description": "Disable IMAP/POP3 (dovecot/cyrus) servers unless needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled dovecot || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now dovecot" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled dovecot || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.nfs",
+            "title": "Ensure network file system services are not in use",
+            "description": "Disable NFS server unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled nfs-server || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now nfs-server" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled nfs-server || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.nis",
+            "title": "Ensure nis server services are not in use",
+            "description": "Disable NIS (ypserv) server unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled ypserv || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now ypserv" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled ypserv || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.print",
+            "title": "Ensure print server services are not in use",
+            "description": "Disable print server (cups) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled cups || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now cups" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled cups || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.rpcbind",
+            "title": "Ensure rpcbind services are not in use",
+            "description": "Disable rpcbind unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled rpcbind || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now rpcbind" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled rpcbind || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.rsync",
+            "title": "Ensure rsync services are not in use",
+            "description": "Disable rsync daemon unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled rsync || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now rsync" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled rsync || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.samba",
+            "title": "Ensure samba file server services are not in use",
+            "description": "Disable Samba (smbd) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled smbd || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now smbd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled smbd || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.snmp",
+            "title": "Ensure snmp services are not in use",
+            "description": "Disable SNMP (snmpd) service unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled snmpd || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now snmpd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled snmpd || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.tftp",
+            "title": "Ensure tftp server services are not in use",
+            "description": "Disable tftp server (tftpd-hpa) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled tftpd-hpa || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now tftpd-hpa" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled tftpd-hpa || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.webproxy",
+            "title": "Ensure web proxy server services are not in use",
+            "description": "Disable web proxy server (squid) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled squid || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now squid" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled squid || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.webserver",
+            "title": "Ensure web server services are not in use",
+            "description": "Disable web server (apache2) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled apache2 || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now apache2" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled apache2 || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.xinetd",
+            "title": "Ensure xinetd services are not in use",
+            "description": "Disable xinetd unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled xinetd || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now xinetd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled xinetd || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.x11",
+            "title": "Ensure X window server services are not in use",
+            "description": "Disable X Window System (x11-common) unless strictly needed.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled x11-common || echo disabled", "expect": "disabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl disable --now x11-common" },
+            "validate": { "type": "shell", "cmd": "systemctl is-enabled x11-common || echo disabled", "expect": "disabled" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.mta-localonly",
+            "title": "Ensure mail transfer agent is configured for local-only mode",
+            "description": "Configure the mail transfer agent to accept only local connections.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "postconf | grep ^inet_interfaces | awk '{print $3}'", "expect": "localhost" },
+            "remediate": { "type": "shell", "cmd": "postconf -e 'inet_interfaces = localhost' && systemctl restart postfix" },
+            "validate": { "type": "shell", "cmd": "postconf | grep ^inet_interfaces | awk '{print $3}'", "expect": "localhost" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.service.approved-listen",
+            "title": "Ensure only approved services are listening on a network interface",
+            "description": "Review and restrict services listening on network interfaces to those approved.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "ss -ltunp | awk '{print $1,$5,$7}'", "expect": "approved" },
+            "remediate": { "type": "shell", "cmd": "systemctl stop <unapproved_service> && systemctl disable <unapproved_service>" },
+            "validate": { "type": "shell", "cmd": "ss -ltunp | awk '{print $1,$5,$7}'", "expect": "approved" },
+            "rollback": { "type": "restore_checkpoint" }
+          }
+        ]
+      },
+      "client_services": {
+        "rules": [
+          {
+            "id": "linux.client.nis",
+            "title": "Ensure NIS Client is not installed",
+            "description": "Remove NIS client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q ypbind || dpkg -l | grep nis", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge nis ypbind -y || yum remove ypbind -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q ypbind || dpkg -l | grep nis", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.rsh",
+            "title": "Ensure rsh client is not installed",
+            "description": "Remove rsh client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q rsh || dpkg -l | grep rsh-client", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge rsh-client -y || yum remove rsh -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q rsh || dpkg -l | grep rsh-client", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.talk",
+            "title": "Ensure talk client is not installed",
+            "description": "Remove talk client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q talk || dpkg -l | grep talk", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge talk -y || yum remove talk -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q talk || dpkg -l | grep talk", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.telnet",
+            "title": "Ensure telnet client is not installed",
+            "description": "Remove telnet client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q telnet || dpkg -l | grep telnet", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge telnet -y || yum remove telnet -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q telnet || dpkg -l | grep telnet", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.ldap",
+            "title": "Ensure LDAP client is not installed",
+            "description": "Remove LDAP client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q openldap-clients || dpkg -l | grep ldap-utils", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge ldap-utils -y || yum remove openldap-clients -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q openldap-clients || dpkg -l | grep ldap-utils", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.ftp",
+            "title": "Ensure FTP client is not installed",
+            "description": "Remove FTP client package unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "rpm -q ftp || dpkg -l | grep ftp", "expect": "not installed" },
+            "remediate": { "type": "shell", "cmd": "apt-get remove --purge ftp -y || yum remove ftp -y" },
+            "validate": { "type": "shell", "cmd": "rpm -q ftp || dpkg -l | grep ftp", "expect": "not installed" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.client.timesync",
+            "title": "Configure Time Synchronization",
+            "description": "Ensure time synchronization service (chrony or systemd-timesyncd) is correctly configured.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-active chronyd || systemctl is-active systemd-timesyncd", "expect": "active" },
+            "remediate": { "type": "shell", "cmd": "systemctl enable --now chronyd || systemctl enable --now systemd-timesyncd" },
+            "validate": { "type": "shell", "cmd": "systemctl is-active chronyd || systemctl is-active systemd-timesyncd", "expect": "active" },
+            "rollback": { "type": "restore_checkpoint" }
+          }
+        ]
+      },
+      "time_sync": {
+        "rules": [
+          {
+            "id": "linux.timesync.single_daemon",
+            "title": "Ensure a single time synchronization daemon is in use",
+            "description": "Only one time synchronization service (chronyd, ntpd, or systemd-timesyncd) should be active to prevent conflicts.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "active_daemons=$(systemctl is-active chronyd ntpd systemd-timesyncd 2>/dev/null | grep active | wc -l); echo $active_daemons",
+              "expect": "1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl stop ntpd; systemctl disable ntpd; systemctl stop chronyd; systemctl disable chronyd; systemctl stop systemd-timesyncd; systemctl disable systemd-timesyncd; systemctl enable --now <preferred_daemon>"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "active_daemons=$(systemctl is-active chronyd ntpd systemd-timesyncd 2>/dev/null | grep active | wc -l); echo $active_daemons",
+              "expect": "1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "systemd_timesyncd": {
+        "rules": [
+          {
+            "id": "linux.timesyncd.authorized_servers",
+            "title": "Ensure systemd-timesyncd configured with authorized timeserver",
+            "description": "Systemd-timesyncd should be configured to use only authorized NTP servers.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E '^NTP=' /etc/systemd/timesyncd.conf | grep -q '<AUTHORIZED_SERVER>' && echo Authorized || echo Unauthorized",
+              "expect": "Authorized"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^#NTP=.*/NTP=<AUTHORIZED_SERVER>/' /etc/systemd/timesyncd.conf && systemctl restart systemd-timesyncd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E '^NTP=' /etc/systemd/timesyncd.conf | grep -q '<AUTHORIZED_SERVER>' && echo Authorized || echo Unauthorized",
+              "expect": "Authorized"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.timesyncd.enabled_running",
+            "title": "Ensure systemd-timesyncd is enabled and running",
+            "description": "Systemd-timesyncd service should be enabled and actively running.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled systemd-timesyncd && systemctl is-active systemd-timesyncd",
+              "expect": "enabled\nactive"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl enable --now systemd-timesyncd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled systemd-timesyncd && systemctl is-active systemd-timesyncd",
+              "expect": "enabled\nactive"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "chrony": {
+        "rules": [
+          {
+            "id": "linux.chrony.authorized_timeserver",
+            "title": "Ensure chrony is configured with authorized timeserver",
+            "description": "Chrony should be configured to use only authorized NTP servers in /etc/chrony.conf.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E '^server ' /etc/chrony.conf | grep -q '<AUTHORIZED_SERVER>' && echo Authorized || echo Unauthorized",
+              "expect": "Authorized"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^server .*/server <AUTHORIZED_SERVER> iburst/' /etc/chrony.conf && systemctl restart chronyd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E '^server ' /etc/chrony.conf | grep -q '<AUTHORIZED_SERVER>' && echo Authorized || echo Unauthorized",
+              "expect": "Authorized"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.chrony.run_as_user_chrony",
+            "title": "Ensure chrony is running as user _chrony",
+            "description": "The chronyd daemon should run as the _chrony user.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "ps -u _chrony -o comm= | grep -qw chronyd && echo RunningAsChrony || echo NotRunningAsChrony",
+              "expect": "RunningAsChrony"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^USER=.*/USER=_chrony/' /etc/sysconfig/chronyd && systemctl restart chronyd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "ps -u _chrony -o comm= | grep -qw chronyd && echo RunningAsChrony || echo NotRunningAsChrony",
+              "expect": "RunningAsChrony"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.chrony.enabled_running",
+            "title": "Ensure chrony is enabled and running",
+            "description": "The chronyd service should be enabled and actively running.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled chronyd && systemctl is-active chronyd",
+              "expect": "enabled\nactive"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl enable --now chronyd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled chronyd && systemctl is-active chronyd",
+              "expect": "enabled\nactive"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "job_schedulers": {
+        "rules": [
+          {
+            "id": "linux.cron.enabled_active",
+            "title": "Ensure cron daemon is enabled and active",
+            "description": "Cron service should be enabled and actively running.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "systemctl is-enabled cron || systemctl is-enabled crond", "expect": "enabled" },
+            "remediate": { "type": "shell", "cmd": "systemctl enable --now cron || systemctl enable --now crond" },
+            "validate": { "type": "shell", "cmd": "systemctl is-active cron || systemctl is-active crond", "expect": "active" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_crontab",
+            "title": "Ensure permissions on /etc/crontab are configured",
+            "description": "Set permissions on /etc/crontab to 600 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/crontab", "expect": "600 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 600 /etc/crontab && chown root:root /etc/crontab" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/crontab", "expect": "600 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_cron_hourly",
+            "title": "Ensure permissions on /etc/cron.hourly are configured",
+            "description": "Set permissions on /etc/cron.hourly to 700 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.hourly", "expect": "700 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 700 /etc/cron.hourly && chown root:root /etc/cron.hourly" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.hourly", "expect": "700 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_cron_daily",
+            "title": "Ensure permissions on /etc/cron.daily are configured",
+            "description": "Set permissions on /etc/cron.daily to 700 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.daily", "expect": "700 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 700 /etc/cron.daily && chown root:root /etc/cron.daily" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.daily", "expect": "700 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_cron_weekly",
+            "title": "Ensure permissions on /etc/cron.weekly are configured",
+            "description": "Set permissions on /etc/cron.weekly to 700 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.weekly", "expect": "700 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 700 /etc/cron.weekly && chown root:root /etc/cron.weekly" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.weekly", "expect": "700 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_cron_monthly",
+            "title": "Ensure permissions on /etc/cron.monthly are configured",
+            "description": "Set permissions on /etc/cron.monthly to 700 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.monthly", "expect": "700 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 700 /etc/cron.monthly && chown root:root /etc/cron.monthly" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.monthly", "expect": "700 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.permissions_etc_cron_d",
+            "title": "Ensure permissions on /etc/cron.d are configured",
+            "description": "Set permissions on /etc/cron.d to 700 and ownership to root:root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.d", "expect": "700 root root" },
+            "remediate": { "type": "shell", "cmd": "chmod 700 /etc/cron.d && chown root:root /etc/cron.d" },
+            "validate": { "type": "shell", "cmd": "stat -c '%a %U %G' /etc/cron.d", "expect": "700 root root" },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.cron.restrict_crontab",
+            "title": "Ensure crontab is restricted to authorized users",
+            "description": "Crontab should be restricted by ensuring /etc/cron.allow contains authorized users only.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": { "type": "shell", "cmd": "test -f /etc/cron.allow && cat /etc/cron.allow", "expect": "authorized users only" },
+            "remediate": { "type": "shell", "cmd": "echo '<user1>' > /etc/cron.allow && chmod 600 /etc/cron.allow && chown root:root /etc/cron.allow" },
+            "validate": { "type": "shell", "cmd": "cat /etc/cron.allow", "expect": "<user1>" },
+            "rollback": { "type": "restore_checkpoint" }
+          }
+        ]
+      },
+      "network_devices": {
+        "rules": [
+          {
+            "id": "linux.network.ipv6_status",
+            "title": "Ensure IPv6 status is identified",
+            "description": "Detect if IPv6 is enabled or disabled on the system.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv6.conf.all.disable_ipv6",
+              "expect": "0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'net.ipv6.conf.all.disable_ipv6=1' >> /etc/sysctl.d/99-disable-ipv6.conf && sysctl -p /etc/sysctl.d/99-disable-ipv6.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv6.conf.all.disable_ipv6",
+              "expect": "1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.network.wireless_disabled",
+            "title": "Ensure wireless interfaces are disabled",
+            "description": "Disable all wireless interfaces to reduce attack surface unless specifically required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "nmcli radio wifi",
+              "expect": "disabled"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "nmcli radio wifi off"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "nmcli radio wifi",
+              "expect": "disabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.network.bluetooth_disabled",
+            "title": "Ensure bluetooth services are not in use",
+            "description": "Disable bluetooth service unless explicitly required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled bluetooth || echo disabled",
+              "expect": "disabled"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl disable --now bluetooth"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-enabled bluetooth || echo disabled",
+              "expect": "disabled"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "network_kernel_modules": {
+        "rules": [
+          {
+            "id": "linux.kernel_module.dccp_disabled",
+            "title": "Ensure dccp kernel module is not available",
+            "description": "Disable loading of the dccp kernel module.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "lsmod | grep -w dccp",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install dccp /bin/true' > /etc/modprobe.d/disable-dccp.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "! lsmod | grep -w dccp",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_module.tipc_disabled",
+            "title": "Ensure tipc kernel module is not available",
+            "description": "Disable loading of the tipc kernel module.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "lsmod | grep -w tipc",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install tipc /bin/true' > /etc/modprobe.d/disable-tipc.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "! lsmod | grep -w tipc",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_module.rds_disabled",
+            "title": "Ensure rds kernel module is not available",
+            "description": "Disable loading of the rds kernel module.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "lsmod | grep -w rds",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install rds /bin/true' > /etc/modprobe.d/disable-rds.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "! lsmod | grep -w rds",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_module.sctp_disabled",
+            "title": "Ensure sctp kernel module is not available",
+            "description": "Disable loading of the sctp kernel module.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "lsmod | grep -w sctp",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'install sctp /bin/true' > /etc/modprobe.d/disable-sctp.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "! lsmod | grep -w sctp",
+              "expect": ""
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "network_kernel_parameters": {
+        "rules": [
+          {
+            "id": "linux.kernel_param.ip_forward_disabled",
+            "title": "Ensure IP forwarding is disabled",
+            "description": "IP forwarding must be disabled to prevent routing between interfaces.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.ip_forward",
+              "expect": "net.ipv4.ip_forward = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.ip_forward=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.ip_forward",
+              "expect": "net.ipv4.ip_forward = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.send_redirects_disabled",
+            "title": "Ensure packet redirect sending is disabled",
+            "description": "Disable sending of ICMP redirects to avoid misleading clients.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.send_redirects",
+              "expect": "net.ipv4.conf.all.send_redirects = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.send_redirects=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.send_redirects",
+              "expect": "net.ipv4.conf.all.send_redirects = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.bogus_icmp_responses",
+            "title": "Ensure bogus ICMP responses are ignored",
+            "description": "Ignore bogus ICMP error responses to enhance security.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.icmp_ignore_bogus_error_responses",
+              "expect": "net.ipv4.icmp_ignore_bogus_error_responses = 1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.icmp_ignore_bogus_error_responses=1"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.icmp_ignore_bogus_error_responses",
+              "expect": "net.ipv4.icmp_ignore_bogus_error_responses = 1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.broadcast_ignores",
+            "title": "Ensure broadcast ICMP requests are ignored",
+            "description": "Ignore ICMP broadcast requests to mitigate smurf attacks.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.icmp_echo_ignore_broadcasts",
+              "expect": "net.ipv4.icmp_echo_ignore_broadcasts = 1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.icmp_echo_ignore_broadcasts",
+              "expect": "net.ipv4.icmp_echo_ignore_broadcasts = 1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.icmp_redirects_not_accepted",
+            "title": "Ensure ICMP redirects are not accepted",
+            "description": "Do not accept ICMP redirects to prevent MITM attacks.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.accept_redirects",
+              "expect": "net.ipv4.conf.all.accept_redirects = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.accept_redirects=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.accept_redirects",
+              "expect": "net.ipv4.conf.all.accept_redirects = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.secure_icmp_redirects",
+            "title": "Ensure secure ICMP redirects are not accepted",
+            "description": "Do not accept secure ICMP redirects to avoid rogue router attacks.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.secure_redirects",
+              "expect": "net.ipv4.conf.all.secure_redirects = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.secure_redirects=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.secure_redirects",
+              "expect": "net.ipv4.conf.all.secure_redirects = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.reverse_path_filtering",
+            "title": "Ensure reverse path filtering is enabled",
+            "description": "Enable reverse path filtering to prevent IP spoofing.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.rp_filter",
+              "expect": "net.ipv4.conf.all.rp_filter = 1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.rp_filter=1"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.rp_filter",
+              "expect": "net.ipv4.conf.all.rp_filter = 1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.source_routed_packets",
+            "title": "Ensure source routed packets are not accepted",
+            "description": "Do not accept source routed packets to prevent spoofing attacks.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.accept_source_route",
+              "expect": "net.ipv4.conf.all.accept_source_route = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.accept_source_route=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.accept_source_route",
+              "expect": "net.ipv4.conf.all.accept_source_route = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.suspicious_packets_log",
+            "title": "Ensure suspicious packets are logged",
+            "description": "Enable logging of suspicious packets for monitoring.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.log_martians",
+              "expect": "net.ipv4.conf.all.log_martians = 1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.conf.all.log_martians=1"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.conf.all.log_martians",
+              "expect": "net.ipv4.conf.all.log_martians = 1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.tcp_syn_cookies",
+            "title": "Ensure TCP syncookies is enabled",
+            "description": "Enable TCP syncookies to prevent SYN flood attacks.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.tcp_syncookies",
+              "expect": "net.ipv4.tcp_syncookies = 1"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv4.tcp_syncookies=1"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv4.tcp_syncookies",
+              "expect": "net.ipv4.tcp_syncookies = 1"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.kernel_param.ipv6_router_advertisements",
+            "title": "Ensure IPv6 router advertisements are not accepted",
+            "description": "Disable acceptance of IPv6 router advertisements.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv6.conf.all.accept_ra",
+              "expect": "net.ipv6.conf.all.accept_ra = 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sysctl -w net.ipv6.conf.all.accept_ra=0"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "sysctl net.ipv6.conf.all.accept_ra",
+              "expect": "net.ipv6.conf.all.accept_ra = 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "host_based_firewall": {
+        "rules": [
+          {
+            "id": "linux.firewall.ufw_installed",
+            "title": "Ensure UFW is installed",
+            "description": "Verify that Uncomplicated Firewall (UFW) is installed.",
+            "level": "basic",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "dpkg -s ufw | grep -i 'Status' | awk '{print $2}'",
+              "expect": "install"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt-get install ufw -y"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "dpkg -s ufw | grep -i 'Status' | awk '{print $2}'",
+              "expect": "install"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.no_iptables_persistent",
+            "title": "Ensure iptables-persistent is not installed with UFW",
+            "description": "Avoid conflict between iptables-persistent and UFW.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "dpkg -s iptables-persistent 2>/dev/null | grep -i 'Status' | awk '{print $2}'",
+              "expect": "none"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt-get remove iptables-persistent -y"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "dpkg -s iptables-persistent 2>/dev/null | grep -i 'Status' | awk '{print $2}'",
+              "expect": "none"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_enabled",
+            "title": "Ensure UFW service is enabled",
+            "description": "Confirm UFW service is enabled and active.",
+            "level": "basic",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "ufw status | grep -i 'Status' | awk '{print $2}'",
+              "expect": "active"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "ufw enable"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "ufw status | grep -i 'Status' | awk '{print $2}'",
+              "expect": "active"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_loopback",
+            "title": "Ensure UFW loopback traffic is configured",
+            "description": "Loopback traffic should be allowed for system communication.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "ufw status | grep -q 'ALLOW IN.*127.0.0.1' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "ufw allow in on lo && ufw allow out on lo"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "ufw status | grep -q 'ALLOW IN.*127.0.0.1' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_outbound",
+            "title": "Ensure UFW outbound connections are configured (Manual)",
+            "description": "Ensure outbound rules are properly configured as per policy.",
+            "level": "manual",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "manual",
+              "cmd": "Review outbound rules using: ufw status numbered",
+              "expect": "Manual verification required"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_open_ports",
+            "title": "Ensure UFW firewall rules exist for all open ports",
+            "description": "Ensure every listening port has a defined UFW rule.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "comm -23 <(ss -tuln | awk 'NR>1 {print $5}' | cut -d: -f2 | sort -u) <(ufw status numbered | awk '/ALLOW/ {print $NF}' | sort -u)",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "manual",
+              "cmd": "Add missing rules using ufw allow <port>"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_default_deny",
+            "title": "Ensure UFW default deny firewall policy",
+            "description": "Ensure UFW denies all inbound and restricts outbound connections by default.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "ufw status verbose | grep -i 'Default' | grep -q 'deny (incoming)' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "ufw default deny incoming && ufw default allow outgoing"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "ufw status verbose | grep -i 'Default' | grep -q 'deny (incoming)' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.firewall.ufw_not_with_iptables",
+            "title": "Ensure UFW is not used with iptables simultaneously",
+            "description": "Prevent both firewalls from managing rules concurrently.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "systemctl is-active iptables | grep -q 'inactive' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "systemctl stop iptables && systemctl disable iptables"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "systemctl is-active iptables | grep -q 'inactive' && echo 'ok' || echo 'fail'",
+              "expect": "ok"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "access_control": {
+        "rules": [
+          {
+            "id": "linux.ssh.permissions_sshd_config",
+            "title": "Ensure permissions on /etc/ssh/sshd_config are configured",
+            "description": "Set secure permissions for sshd_config file.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/ssh/sshd_config",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/ssh/sshd_config && chown root:root /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a' /etc/ssh/sshd_config",
+              "expect": "600"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.private_key_permissions",
+            "title": "Ensure permissions on SSH private host key files are configured",
+            "description": "Private host key files must be restricted to root only.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key' -exec stat -c '%a' {} \\;",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key' -exec chmod 600 {} \\; -exec chown root:root {} \\;"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key' -exec stat -c '%a' {} \\;",
+              "expect": "600"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.public_key_permissions",
+            "title": "Ensure permissions on SSH public host key files are configured",
+            "description": "SSH public host keys must be world-readable but owned by root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key.pub' -exec stat -c '%a' {} \\;",
+              "expect": "644"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key.pub' -exec chmod 644 {} \\; -exec chown root:root {} \\;"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "find /etc/ssh -name 'ssh_host_*_key.pub' -exec stat -c '%a' {} \\;",
+              "expect": "644"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.access_configured",
+            "title": "Ensure sshd access is configured",
+            "description": "Limit SSH access to authorized users or groups.",
+            "level": "manual",
+            "platforms": ["linux"],
+            "check": {
+              "type": "manual",
+              "cmd": "Check /etc/ssh/sshd_config for AllowUsers or AllowGroups directives.",
+              "expect": "Manual verification required"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.banner_configured",
+            "title": "Ensure sshd Banner is configured",
+            "description": "Display a legal banner on SSH connection.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^Banner' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "/etc/issue.net"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Banner /etc/issue.net' >> /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^Banner' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "/etc/issue.net"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.ciphers_configured",
+            "title": "Ensure sshd Ciphers are configured",
+            "description": "Use only strong SSH ciphers.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^Ciphers' /etc/ssh/sshd_config",
+              "expect": "Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Ciphers aes256-ctr,aes192-ctr,aes128-ctr' >> /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^Ciphers' /etc/ssh/sshd_config",
+              "expect": "Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.client_alive",
+            "title": "Ensure sshd ClientAliveInterval and ClientAliveCountMax are configured",
+            "description": "Terminate idle SSH sessions automatically.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E 'ClientAliveInterval|ClientAliveCountMax' /etc/ssh/sshd_config",
+              "expect": "ClientAliveInterval 300\nClientAliveCountMax 0"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'ClientAliveInterval 300' >> /etc/ssh/sshd_config && echo 'ClientAliveCountMax 0' >> /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E 'ClientAliveInterval|ClientAliveCountMax' /etc/ssh/sshd_config",
+              "expect": "ClientAliveInterval 300\nClientAliveCountMax 0"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.disable_forwarding",
+            "title": "Ensure sshd DisableForwarding is enabled",
+            "description": "Prevent SSH port forwarding.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^DisableForwarding' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "yes"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'DisableForwarding yes' >> /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^DisableForwarding' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "yes"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.gssapi_disabled",
+            "title": "Ensure sshd GSSAPIAuthentication is disabled",
+            "description": "Disable GSSAPIAuthentication unless required.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^GSSAPIAuthentication' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^#\\?GSSAPIAuthentication.*/GSSAPIAuthentication no/' /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^GSSAPIAuthentication' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.hostbased_disabled",
+            "title": "Ensure sshd HostbasedAuthentication is disabled",
+            "description": "Prevent host-based authentication method.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^HostbasedAuthentication' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^#\\?HostbasedAuthentication.*/HostbasedAuthentication no/' /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^HostbasedAuthentication' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "no"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.ssh.ignore_rhosts",
+            "title": "Ensure sshd IgnoreRhosts is enabled",
+            "description": "Do not use .rhosts for authentication.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -i '^IgnoreRhosts' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "yes"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'IgnoreRhosts yes' >> /etc/ssh/sshd_config"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -i '^IgnoreRhosts' /etc/ssh/sshd_config | awk '{print $2}'",
+              "expect": "yes"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "pam": {
+        "rules": [
+          {
+            "id": "linux.pam.package_latest",
+            "title": "Ensure latest version of PAM is installed",
+            "description": "Keep PAM package updated to the latest stable version.",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu"],
+            "check": {
+              "type": "shell",
+              "cmd": "dpkg -l | grep '^ii' | grep pam",
+              "expect": "libpam"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt-get install --only-upgrade libpam0g -y"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "dpkg -s libpam0g | grep 'Status' | awk '{print $2}'",
+              "expect": "installed"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.pam.libpam_modules",
+            "title": "Ensure libpam-modules and libpam-pwquality are installed",
+            "description": "Verify essential PAM modules are present.",
+            "level": "basic",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "dpkg -s libpam-modules libpam-pwquality | grep 'Status' | wc -l",
+              "expect": "2"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "apt install libpam-modules libpam-pwquality -y"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "dpkg -s libpam-modules libpam-pwquality | grep 'Status' | wc -l",
+              "expect": "2"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.pam.unix_enabled",
+            "title": "Ensure pam_unix module is enabled",
+            "description": "Verify pam_unix module is enabled via pam-auth-update.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E '^auth.*pam_unix.so' /etc/pam.d/common-auth",
+              "expect": "pam_unix.so"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "pam-auth-update --enable unix"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E '^auth.*pam_unix.so' /etc/pam.d/common-auth",
+              "expect": "pam_unix.so"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.pam.faillock",
+            "title": "Configure pam_faillock module for failed login lockout",
+            "description": "Lock accounts after multiple failed login attempts, including root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E 'deny=' /etc/security/faillock.conf | awk -F= '{print $2}'",
+              "expect": "5"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'deny=5 unlock_time=900 even_deny_root' >> /etc/security/faillock.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E 'deny=' /etc/security/faillock.conf | awk -F= '{print $2}'",
+              "expect": "5"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.pam.pwquality",
+            "title": "Configure pam_pwquality for password strength enforcement",
+            "description": "Ensure strong password policies and checks for all users including root.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E 'minlen=' /etc/security/pwquality.conf | awk -F= '{print $2}'",
+              "expect": "12"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'minlen=12 maxrepeat=2 maxclassrepeat=3 retry=3 enforce_for_root' >> /etc/security/pwquality.conf"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E 'minlen=' /etc/security/pwquality.conf | awk -F= '{print $2}'",
+              "expect": "12"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          },
+          {
+            "id": "linux.pam.pwhistory",
+            "title": "Configure pam_pwhistory module for password reuse control",
+            "description": "Ensure password history is enforced and reuse is restricted.",
+            "level": "strict",
+            "platforms": ["linux"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -E 'remember=' /etc/pam.d/common-password | awk -F= '{print $2}'",
+              "expect": "5"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i '/pam_pwhistory.so/ s/$/ remember=5 use_authtok enforce_for_root/' /etc/pam.d/common-password"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -E 'remember=' /etc/pam.d/common-password | awk -F= '{print $2}'",
+              "expect": "5"
+            },
+            "rollback": {
+              "type": "restore_checkpoint"
+            }
+          }
+        ]
+      },
+      "user_accounts_shadow": {
+        "rules": [
+          {
+            "id": "linux.user.password_expiration",
+            "title": "Ensure password expiration is configured",
+            "description": "Set max password age for users to 90 days",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "chage -l $(whoami) | grep 'Maximum' | awk '{print $NF}'",
+              "expect": "90"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chage -M 90 $(whoami)"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "chage -l $(whoami) | grep 'Maximum' | awk '{print $NF}'",
+              "expect": "90"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.user.min_password_days",
+            "title": "Ensure minimum password days is configured",
+            "description": "Set minimum password age to prevent immediate reuse",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.password_warning_days",
+            "title": "Ensure password expiration warning days is configured",
+            "description": "Set warning period before password expiration",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.strong_hashing",
+            "title": "Ensure strong password hashing algorithm is configured",
+            "description": "Use SHA-512 hashing in /etc/login.defs or PAM",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep '^ENCRYPT_METHOD' /etc/login.defs | awk '{print $2}'",
+              "expect": "SHA512"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i 's/^ENCRYPT_METHOD.*/ENCRYPT_METHOD SHA512/' /etc/login.defs"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep '^ENCRYPT_METHOD' /etc/login.defs | awk '{print $2}'",
+              "expect": "SHA512"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.user.inactive_lock",
+            "title": "Ensure inactive password lock is configured",
+            "description": "Set account inactive period after password expiration",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.last_password_change",
+            "title": "Ensure all users last password change date is in the past",
+            "description": "Verify that all users have a valid last password change date",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          }
+        ]
+      },
+      "user_accounts_root_system": {
+        "rules": [
+          {
+            "id": "linux.user.root_uid_check",
+            "title": "Ensure root is the only UID 0 account",
+            "description": "Verify that no other account has UID 0",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "awk -F: '($3==0){print $1}' /etc/passwd",
+              "expect": "root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'Manual action required for other UID 0 accounts'"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "awk -F: '($3==0){print $1}' /etc/passwd",
+              "expect": "root"
+            },
+            "rollback": { "type": "restore_checkpoint" },
+            "manual": true
+          },
+          {
+            "id": "linux.user.root_gid_check",
+            "title": "Ensure root is the only GID 0 account",
+            "description": "Verify that no other group has GID 0",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.root_path_integrity",
+            "title": "Ensure root path integrity",
+            "description": "Verify that directories in root's PATH are secure",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.root_umask",
+            "title": "Ensure root user umask is configured",
+            "description": "Set root's default umask to 027 or stricter",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep 'umask' /root/.bashrc",
+              "expect": "027"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'umask 027' >> /root/.bashrc"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep 'umask' /root/.bashrc",
+              "expect": "027"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.user.system_no_login_shells",
+            "title": "Ensure system accounts do not have a valid login shell",
+            "description": "Verify all system accounts use nologin or false shell",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.lock_invalid_shell_accounts",
+            "title": "Ensure accounts without a valid login shell are locked",
+            "description": "Lock any accounts that should not have valid login shells",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.user.nologin_check",
+            "title": "Ensure nologin is not listed in /etc/shells",
+            "description": "Verify nologin or false shells are not incorrectly listed in /etc/shells",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep -v '^#' /etc/shells | grep -w 'nologin'",
+              "expect": ""
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "sed -i '/nologin/d' /etc/shells"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep -v '^#' /etc/shells | grep -w 'nologin'",
+              "expect": ""
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.user.default_shell_timeout",
+            "title": "Ensure default user shell timeout is configured",
+            "description": "Set TMOUT in /etc/profile or /etc/bash.bashrc for idle session timeout",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep TMOUT /etc/profile",
+              "expect": "600"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'TMOUT=600' >> /etc/profile"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep TMOUT /etc/profile",
+              "expect": "600"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.user.default_umask",
+            "title": "Ensure default user umask is configured",
+            "description": "Set default umask for all users to 027 or stricter",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "grep 'umask' /etc/profile",
+              "expect": "027"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "echo 'umask 027' >> /etc/profile"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "grep 'umask' /etc/profile",
+              "expect": "027"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          }
+        ]
+      },
+      "system_maintenance": {
+        "rules": [
+          {
+            "id": "linux.system.passwd",
+            "title": "Ensure permissions on /etc/passwd are configured",
+            "description": "Set ownership to root:root and permissions to 644 for /etc/passwd",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/passwd",
+              "expect": "644 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 644 /etc/passwd && chown root:root /etc/passwd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/passwd",
+              "expect": "644 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.passwd_backup",
+            "title": "Ensure permissions on /etc/passwd- are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/passwd-",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/passwd-",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/passwd- && chown root:root /etc/passwd-"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/passwd-",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.group",
+            "title": "Ensure permissions on /etc/group are configured",
+            "description": "Set ownership to root:root and permissions to 644 for /etc/group",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/group",
+              "expect": "644 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 644 /etc/group && chown root:root /etc/group"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/group",
+              "expect": "644 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.group_backup",
+            "title": "Ensure permissions on /etc/group- are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/group-",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/group-",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/group- && chown root:root /etc/group-"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/group-",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.shadow",
+            "title": "Ensure permissions on /etc/shadow are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/shadow",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shadow",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/shadow && chown root:root /etc/shadow"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shadow",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.shadow_backup",
+            "title": "Ensure permissions on /etc/shadow- are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/shadow-",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shadow-",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/shadow- && chown root:root /etc/shadow-"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shadow-",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.gshadow",
+            "title": "Ensure permissions on /etc/gshadow are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/gshadow",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/gshadow",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/gshadow && chown root:root /etc/gshadow"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/gshadow",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.gshadow_backup",
+            "title": "Ensure permissions on /etc/gshadow- are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/gshadow-",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/gshadow-",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/gshadow- && chown root:root /etc/gshadow-"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/gshadow-",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.shells",
+            "title": "Ensure permissions on /etc/shells are configured",
+            "description": "Set ownership to root:root and permissions to 644 for /etc/shells",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shells",
+              "expect": "644 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 644 /etc/shells && chown root:root /etc/shells"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/shells",
+              "expect": "644 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.opasswd",
+            "title": "Ensure permissions on /etc/security/opasswd are configured",
+            "description": "Set ownership to root:root and permissions to 600 for /etc/security/opasswd",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "check": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/security/opasswd",
+              "expect": "600 root:root"
+            },
+            "remediate": {
+              "type": "shell",
+              "cmd": "chmod 600 /etc/security/opasswd && chown root:root /etc/security/opasswd"
+            },
+            "validate": {
+              "type": "shell",
+              "cmd": "stat -c '%a %U:%G' /etc/security/opasswd",
+              "expect": "600 root:root"
+            },
+            "rollback": { "type": "restore_checkpoint" }
+          },
+          {
+            "id": "linux.system.world_writable",
+            "title": "Ensure world writable files and directories are secured",
+            "description": "Find all world-writable files/directories and remove permissions or alert",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.system.orphan_files",
+            "title": "Ensure no files or directories without an owner or group exist",
+            "description": "Check for files with no UID/GID and secure them",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          },
+          {
+            "id": "linux.system.suid_sgid",
+            "title": "Ensure SUID and SGID files are reviewed",
+            "description": "Manual review of all SUID and SGID files",
+            "level": "strict",
+            "platforms": ["linux", "ubuntu", "kali"],
+            "manual": true
+          }
+        ]
+      }
+
+
+    }
+  }
+}
+

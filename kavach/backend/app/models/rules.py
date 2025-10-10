@@ -2,7 +2,7 @@
 Pydantic Models for Rule Validation
 """
 from typing import List, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class RuleAction(BaseModel):
     """Defines an action within a rule (check, remediate, validate)."""
@@ -23,7 +23,7 @@ class Rule(BaseModel):
     platforms: List[str]
     check: RuleAction
     remediate: RuleAction
-    validate: RuleAction
+    validation: RuleAction
     rollback: RollbackAction
 
 class RuleSet(BaseModel):
